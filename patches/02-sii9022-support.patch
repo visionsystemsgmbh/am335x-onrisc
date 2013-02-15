@@ -1,0 +1,3061 @@
+add SiI9022 HDMI converter support
+
+From: Yegor Yefremov <yegorslists@googlemail.com>
+
+
+---
+
+ arch/arm/mach-omap2/board-am335xevm.c |   68 +
+ drivers/i2c/i2c-core.c                |    2 
+ drivers/video/da8xx-fb.c              |   72 ++
+ drivers/video/display/Kconfig         |    4 
+ drivers/video/display/Makefile        |    1 
+ drivers/video/display/siihdmi.c       | 1514 +++++++++++++++++++++++++++++++++
+ drivers/video/display/siihdmi.h       |  421 +++++++++
+ include/linux/cea861.h                |  443 ++++++++++
+ include/linux/edid.h                  |  372 ++++++++
+ 9 files changed, 2893 insertions(+), 4 deletions(-)
+ create mode 100644 drivers/video/display/siihdmi.c
+ create mode 100644 drivers/video/display/siihdmi.h
+ create mode 100644 include/linux/cea861.h
+ create mode 100644 include/linux/edid.h
+
+
+diff --git a/arch/arm/mach-omap2/board-am335xevm.c b/arch/arm/mach-omap2/board-am335xevm.c
+index fbe4e38..8efac9d 100644
+--- a/arch/arm/mach-omap2/board-am335xevm.c
++++ b/arch/arm/mach-omap2/board-am335xevm.c
+@@ -72,6 +72,9 @@
+ #include "mux.h"
+ #include "devices.h"
+ #include "hsmmc.h"
++#include "../../../drivers/video/display/siihdmi.h"
++
++#define ALEKTO2_I2C_GPIO
+ 
+ /* Convert GPIO signal to GPIO pin number */
+ #define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
+@@ -585,6 +588,24 @@ static struct pinmux_config i2c1_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++#if defined(ALEKTO2_I2C_GPIO)
++static struct pinmux_config i2c1_alekto2_gpio_pin_mux[] = {
++	{"uart1_rxd.gpio0_14",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT_PULLUP |
++		AM33XX_PIN_INPUT_PULLDOWN},
++	{"uart1_txd.gpio0_15",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT_PULLUP |
++		AM33XX_PIN_INPUT_PULLDOWN},
++	{NULL, 0},
++};
++#else
++static struct pinmux_config i2c1_alekto2_pin_mux[] = {
++	{"uart1_rxd.i2c1_sda",    OMAP_MUX_MODE3 | AM33XX_SLEWCTRL_SLOW |
++					AM33XX_PIN_INPUT_PULLUP},
++	{"uart1_txd.i2c1_scl",   OMAP_MUX_MODE3 | AM33XX_SLEWCTRL_SLOW |
++					AM33XX_PIN_INPUT_PULLUP},
++	{NULL, 0},
++};
++#endif
++
+ static struct pinmux_config i2c2_pin_mux[] = {
+ 	{"uart1_ctsn.i2c2_sda",    OMAP_MUX_MODE3 | AM33XX_SLEWCTRL_SLOW |
+ 					AM33XX_PULL_UP | AM33XX_INPUT_EN},
+@@ -1059,7 +1080,7 @@ static void lcdc_init(int evm_id, int profile)
+ 	struct da8xx_lcdc_platform_data *lcdc_pdata;
+ 	setup_pin_mux(lcdc_pin_mux);
+ 
+-	if (conf_disp_pll(300000000)) {
++	if (conf_disp_pll(560000000)) {
+ 		pr_info("Failed configure display PLL, not attempting to"
+ 				"register LCDC\n");
+ 		return;
+@@ -1599,6 +1620,30 @@ static struct i2c_board_info am335x_i2c1_boardinfo[] = {
+ 	},
+ };
+ 
++static struct siihdmi_platform_data alekto2_siihdmi_data = {
++	.vendor      = "VScom",
++	.description = "Alekto2",
++
++	.reset_pin = GPIO_TO_PIN(0, 31),
++
++	.framebuffer = "DA8xx FB Drv",
++
++	.hotplug     = {
++		.start = AM33XX_IRQ_PI_NMI,
++		.end   = AM33XX_IRQ_PI_NMI,
++		.name  = "video-hotplug",
++		.flags = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE,
++	},
++	//.pixclock    = KHZ2PICOS(133000L),
++};
++
++static struct i2c_board_info alekto2_i2c_boardinfo1[] = {
++	{
++		I2C_BOARD_INFO("siihdmi", 0x39),
++		.platform_data = &alekto2_siihdmi_data,
++	},
++};
++
+ static void i2c1_init(int evm_id, int profile)
+ {
+ 	setup_pin_mux(i2c1_pin_mux);
+@@ -1607,6 +1652,22 @@ static void i2c1_init(int evm_id, int profile)
+ 	return;
+ }
+ 
++#if defined(ALEKTO2_I2C_GPIO)
++static void i2c1_alekto2_gpio_init(int evm_id, int profile)
++{
++	setup_pin_mux(i2c1_alekto2_gpio_pin_mux);
++	return;
++}
++#else
++static void i2c1_alekto2_init(int evm_id, int profile)
++{
++	setup_pin_mux(i2c1_alekto2_pin_mux);
++	omap_register_i2c_bus(2, 100, alekto2_i2c_boardinfo1,
++			ARRAY_SIZE(alekto2_i2c_boardinfo1));
++	return;
++}
++#endif
++
+ static struct i2c_board_info am335x_i2c2_boardinfo[] = {
+ };
+ 
+@@ -2226,6 +2287,11 @@ static struct evm_dev_cfg alekto2_dev_cfg[] = {
+ 	{rgmii2_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
+ 	{usb0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{usb1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
++#if defined(ALEKTO2_I2C_GPIO)
++	{i2c1_alekto2_gpio_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
++#else
++	{i2c1_alekto2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
++#endif
+ 	{i2c2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{mmc1_wl12xx_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+diff --git a/drivers/i2c/i2c-core.c b/drivers/i2c/i2c-core.c
+index 1e56061..caf4aef 100644
+--- a/drivers/i2c/i2c-core.c
++++ b/drivers/i2c/i2c-core.c
+@@ -2100,7 +2100,7 @@ s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
+ 	int try;
+ 	s32 res;
+ 
+-	flags &= I2C_M_TEN | I2C_CLIENT_PEC;
++	flags &= I2C_M_TEN | I2C_CLIENT_PEC | I2C_M_IGNORE_NAK;
+ 
+ 	if (adapter->algo->smbus_xfer) {
+ 		i2c_lock_adapter(adapter);
+diff --git a/drivers/video/da8xx-fb.c b/drivers/video/da8xx-fb.c
+index a50114c..c90ada2 100644
+--- a/drivers/video/da8xx-fb.c
++++ b/drivers/video/da8xx-fb.c
+@@ -142,6 +142,23 @@ static struct resource *lcdc_regs;
+ static unsigned int lcd_revision;
+ static irq_handler_t lcdc_irq_handler;
+ 
++static const char *mode_option;
++
++const struct fb_videomode modedb_siihdmi[] = {
++	/* 640x480 @ 60 Hz, 60 kHz hsync */
++	{"640x480@60", 60, 640, 480, 41071, 80, 48, 15, 3, 32, 4,
++	FB_SYNC_ON_GREEN, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA},
++	/* 800x600 @ 60 Hz, 76.8 kHz hsync */
++	{"800x600@60", 60, 800, 600, 26785, 80, 48, 15, 3, 32, 4,
++	FB_SYNC_ON_GREEN, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA},
++	/* 1024x768 @ 60 Hz, 76.8 kHz hsync */
++	{"1024x768@60", 60, 1024, 768, 17857, 80, 48, 15, 3, 32, 4,
++	FB_SYNC_ON_GREEN, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA},
++	/* 1280x1024 @ 60 Hz, 76.8 kHz hsync */
++	{"1280x1024@60", 60, 1280, 1024, 10714, 80, 48, 15, 3, 32, 4,
++	FB_SYNC_ON_GREEN, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA},
++};
++
+ static inline unsigned int lcdc_read(unsigned int addr)
+ {
+ 	return (unsigned int)readl(da8xx_fb_reg_base + (addr));
+@@ -248,7 +265,7 @@ static struct da8xx_panel known_lcd_panels[] = {
+ 		.invert_pxl_clk = 1,
+ 	},
+ 	/* Sharp LK043T1DG01 */
+-	[1] = {
++	/*[1] = {
+ 		.name = "Sharp_LK043T1DG01",
+ 		.width = 480,
+ 		.height = 272,
+@@ -260,6 +277,19 @@ static struct da8xx_panel known_lcd_panels[] = {
+ 		.vsw = 10,
+ 		.pxl_clk = 7833600,
+ 		.invert_pxl_clk = 0,
++	},*/
++	[1] = {
++		.name = "1024test",
++		.width = 1366,
++		.height = 768,
++		.hfp = 48,
++		.hbp = 80,
++		.hsw = 32,
++		.vfp = 3,
++		.vbp = 15,
++		.vsw = 4,
++		.pxl_clk = 72332400,
++		.invert_pxl_clk = 0,
+ 	},
+ 	/* ThreeFive S9700RTWV35TR */
+ 	[2] = {
+@@ -1521,8 +1551,18 @@ static int __devinit fb_probe(struct platform_device *device)
+ 
+ 	/* initialize var_screeninfo */
+ 	da8xx_fb_var.activate = FB_ACTIVATE_FORCE;
+-	fb_set_var(da8xx_fb_info, &da8xx_fb_var);
++	/* find proper video mode */
++	ret = fb_find_mode(&da8xx_fb_info->var, da8xx_fb_info,
++			   mode_option,
++			   modedb_siihdmi, sizeof(modedb_siihdmi)/sizeof(modedb_siihdmi[0]), NULL,
++			   lcd_cfg->bpp);
++	if (ret == 0 || ret == 4) {
++		printk(KERN_ERR "da8xx: Could not find valid video mode\n");
++		return -EINVAL;
++	}
++	//fb_set_var(da8xx_fb_info, &da8xx_fb_var);
+ 
++	da8xx_fb_info->var.sync = FB_SYNC_ON_GREEN;
+ 	dev_set_drvdata(&device->dev, da8xx_fb_info);
+ 
+ 	/* initialize the vsync wait queue */
+@@ -1706,8 +1746,36 @@ static struct platform_driver da8xx_fb_driver = {
+ 		   },
+ };
+ 
++static int da8xx_setup(void)
++{
++#ifndef MODULE
++	char *opt, *options = NULL;
++
++	if (fb_get_options("da8xx_lcdc", &options))
++		return -ENODEV;
++
++	if (!options || !*options)
++		return 0;
++
++	while ((opt = strsep(&options, ",")) != NULL) {
++		if (!*opt)
++			continue;
++		else
++		{
++			mode_option = opt;
++		}
++	}
++#endif
++	return 0;
++}
++
+ static int __init da8xx_fb_init(void)
+ {
++	int ret = da8xx_setup();
++
++	if (ret < 0)
++		return ret;
++
+ 	return platform_driver_register(&da8xx_fb_driver);
+ }
+ 
+diff --git a/drivers/video/display/Kconfig b/drivers/video/display/Kconfig
+index f99af93..e3f048b 100644
+--- a/drivers/video/display/Kconfig
++++ b/drivers/video/display/Kconfig
+@@ -21,4 +21,8 @@ config DISPLAY_SUPPORT
+ comment "Display hardware drivers"
+ 	depends on DISPLAY_SUPPORT
+ 
++config FB_MXC_SIIHDMI
++	depends on FB_DA8XX
++	bool "SII9xxx HDMI Interface Chips"
++
+ endmenu
+diff --git a/drivers/video/display/Makefile b/drivers/video/display/Makefile
+index c0ea832..29839af 100644
+--- a/drivers/video/display/Makefile
++++ b/drivers/video/display/Makefile
+@@ -3,4 +3,5 @@
+ display-objs				:= display-sysfs.o
+ 
+ obj-$(CONFIG_DISPLAY_SUPPORT)		+= display.o
++obj-$(CONFIG_FB_MXC_SIIHDMI)   		+= siihdmi.o
+ 
+diff --git a/drivers/video/display/siihdmi.c b/drivers/video/display/siihdmi.c
+new file mode 100644
+index 0000000..6cc728a
+--- /dev/null
++++ b/drivers/video/display/siihdmi.c
+@@ -0,0 +1,1514 @@
++/* vim: set noet ts=8 sts=8 sw=8 : */
++/*
++ * Copyright © 2010 Saleem Abdulrasool <compnerd@compnerd.org>.
++ * Copyright © 2010 Genesi USA, Inc. <matt@genesi-usa.com>.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright notice,
++ *    this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright notice,
++ *    this list of conditions and the following disclaimer in the documentation
++ *    and/or other materials provided with the distribution.
++ *
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
++ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <linux/fb.h>
++#include <linux/i2c.h>
++#include <linux/gpio.h>
++#include <linux/delay.h>
++#include <linux/sysfs.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/math64.h>
++#include <linux/console.h>
++#include <linux/workqueue.h>
++#include <linux/interrupt.h>
++
++#include <linux/edid.h>
++#include <linux/cea861.h>
++
++//#include "../cea861_modedb.h"
++
++#include "siihdmi.h"
++
++
++/* logging helpers */
++#define CONTINUE(fmt, ...)	printk(KERN_CONT    fmt, ## __VA_ARGS__)
++#define DEBUG(fmt, ...)		printk(KERN_DEBUG   "SIIHDMI: " fmt, ## __VA_ARGS__)
++#define ERROR(fmt, ...)		printk(KERN_ERR     "SIIHDMI: " fmt, ## __VA_ARGS__)
++#define WARNING(fmt, ...)	printk(KERN_WARNING "SIIHDMI: " fmt, ## __VA_ARGS__)
++#define INFO(fmt, ...)		printk(KERN_INFO    "SIIHDMI: " fmt, ## __VA_ARGS__)
++
++
++/* module parameters */
++static unsigned int bus_timeout = 500;
++module_param(bus_timeout, uint, 0644);
++MODULE_PARM_DESC(bus_timeout, "bus timeout in milliseconds");
++
++static unsigned int seventwenty	= 1;
++module_param(seventwenty, uint, 0644);
++MODULE_PARM_DESC(seventwenty, "attempt to use 720p mode");
++
++static unsigned int teneighty    = 0;
++module_param(teneighty, uint, 0644);
++MODULE_PARM_DESC(teneighty, "attempt to use 1080p mode");
++
++static unsigned int useitmodes	= 1;
++module_param(useitmodes, uint, 0644);
++MODULE_PARM_DESC(useitmodes, "prefer IT modes over CEA modes when sanitizing the modelist");
++
++static unsigned int modevic = 0;
++module_param_named(vic, modevic, uint, 0644);
++MODULE_PARM_DESC(modevic, "CEA VIC to try and match before autodetection");
++
++/**
++ * fb_res_is_equal - compare 2 videomodes
++ * @mode1: first videomode
++ * @mode2: second videomode
++ *
++ * RETURNS:
++ * 1 if resolution is equal, 0 if not
++ */
++int fb_res_is_equal(const struct fb_videomode *mode1,
++		    const struct fb_videomode *mode2)
++{
++	return (mode1->xres    == mode2->xres &&
++		mode1->yres    == mode2->yres &&
++		mode1->refresh == mode2->refresh);
++}
++
++/**
++ * fb_find_best_mode_at_most - find closest videomode a different way
++ *
++ * @mode: pointer to struct fb_videomode
++ * @head: pointer to modelist
++ *
++ * Finds best matching videomode, smaller or equal in dimension, with the
++ * highest refresh rate (specifically designed to service LCD panels with
++ * a maximum screen size == native panel size, and all other modes being
++ * smaller, or at least the same but with a lower refresh for pixelclock
++ * limited devices. e.g. 1080p24 instead of 1080p60, or 1440x900@60 instead
++ * of 1680x1050@72 - proper selection of mode is dependent on a properly
++ * sanitized modelist with any invalid/undisplayable modes removed.)
++ *
++ * This is a kind of works-best amalgam of find_best_mode (which operates on
++ * fb_var_screeninfo which is silly, but is concerned about the highest and
++ * therefore least flickery refresh rate) and find_nearest_mode (which is
++ * also looking for a mode bigger than the passed one, and seems not to pick
++ * the greatest mode in the vast majority of cases)
++ *
++ */
++const struct fb_videomode *fb_find_best_mode_at_most(const struct fb_videomode *max,
++						     struct list_head *modes)
++{
++	struct fb_videomode *best = NULL;
++	struct list_head *entry;
++	u32 difference = -1;
++
++	list_for_each(entry, modes) {
++		const struct fb_modelist * const modelist =
++			list_entry(entry, struct fb_modelist, list);
++		const struct fb_videomode * const mode = &modelist->mode;
++
++		if (mode->xres <= max->xres && mode->yres <= max->yres) {
++			const u32 delta = (max->xres - mode->xres)
++					+ (max->yres - mode->yres);
++
++			if (delta == difference) {
++				if (best && mode->refresh > best->refresh)
++					best = mode;
++				continue;
++			}
++
++			if (delta < difference) {
++				difference = delta;
++				best = mode;
++				continue;
++			}
++		}
++	}
++
++	return best;
++}
++
++static int siihdmi_detect_revision(struct siihdmi_tx *tx)
++{
++	u8 data;
++	unsigned long start;
++
++	start = jiffies;
++	do {
++		data = i2c_smbus_read_byte_data(tx->client,
++						SIIHDMI_TPI_REG_DEVICE_ID);
++	} while (data != SIIHDMI_DEVICE_ID_902x &&
++		 !time_after(jiffies, start + bus_timeout));
++
++	if (data != SIIHDMI_DEVICE_ID_902x)
++		return -ENODEV;
++
++	INFO("Device ID: %#02x", data);
++
++	data = i2c_smbus_read_byte_data(tx->client,
++					SIIHDMI_TPI_REG_DEVICE_REVISION);
++	if (data)
++		CONTINUE(" (rev %01u.%01u)",
++			 (data >> 4) & 0xf, (data >> 0) & 0xf);
++
++	data = i2c_smbus_read_byte_data(tx->client,
++					SIIHDMI_TPI_REG_TPI_REVISION);
++	CONTINUE(" (%s",
++		 (data & SIIHDMI_VERSION_FLAG_VIRTUAL) ? "Virtual " : "");
++	data &= ~SIIHDMI_VERSION_FLAG_VIRTUAL;
++	data = data ? data : SIIHDMI_BASE_TPI_REVISION;
++	CONTINUE("TPI revision %01u.%01u)",
++		 (data >> 4) & 0xf, (data >> 0) & 0xf);
++
++	data = i2c_smbus_read_byte_data(tx->client,
++					SIIHDMI_TPI_REG_HDCP_REVISION);
++	if (data)
++		CONTINUE(" (HDCP version %01u.%01u)",
++			 (data >> 4) & 0xf, (data >> 0) & 0xf);
++
++	CONTINUE("\n");
++
++	return 0;
++}
++
++static inline int siihdmi_power_up(struct siihdmi_tx *tx)
++{
++	int ret;
++	u8 ctrl;
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_PWR_STATE,
++					SIIHDMI_POWER_STATE_D0);
++	if (ret < 0)
++		ERROR("unable to power up transmitter\n");
++
++#if 1
++	/* enable TX termination */
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_INTERNAL_REG_SET_PAGE,
++					0x01);
++	if (ret < 0)
++		ERROR("unable to power up transmitter\n");
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_INTERNAL_REG_SET_OFFSET,
++					0x82);
++	if (ret < 0)
++		ERROR("unable to power up transmitter\n");
++
++	ctrl = i2c_smbus_read_byte_data(tx->client, SIIHDMI_INTERNAL_REG_ACCESS);
++
++	ctrl |= 0x01;
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_INTERNAL_REG_ACCESS,
++					ctrl);
++	if (ret < 0)
++		ERROR("unable to power up transmitter\n");
++#endif
++	return ret;
++}
++
++static inline int siihdmi_power_down(struct siihdmi_tx *tx)
++{
++	int ret;
++	u8 ctrl;
++
++	memset((void *) &tx->sink.current_mode, 0, sizeof(struct fb_videomode));
++
++	ctrl = SIIHDMI_SYS_CTRL_TMDS_OUTPUT_POWER_DOWN;
++	if (tx->sink.type == SINK_TYPE_HDMI)
++		ctrl |= SIIHDMI_SYS_CTRL_OUTPUT_MODE_SELECT_HDMI;
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_SYS_CTRL, ctrl);
++	if (ret < 0) {
++		ERROR("unable to power down transmitter\n");
++		return ret;
++	}
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_PWR_STATE,
++					SIIHDMI_POWER_STATE_D2);
++	if (ret < 0) {
++		ERROR("unable to set transmitter into D2\n");
++		return ret;
++	}
++
++	return 0;
++}
++
++static int siihdmi_initialise(struct siihdmi_tx *tx)
++{
++	int ret;
++
++	/* step 1: reset and initialise */
++	if (tx->platform->reset)
++		tx->platform->reset();
++
++#if 1
++	/* reset chip */
++	ret = gpio_request(tx->platform->reset_pin, "sii9022 reset");
++	if(ret < 0)
++		WARNING("failed to setup HDMI reset pin\n");
++
++	gpio_direction_output(tx->platform->reset_pin, 0);
++	msleep(100);
++	gpio_set_value(tx->platform->reset_pin, 1 );
++#endif
++
++	ret = i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_RQB, 0x00);
++	if (ret < 0) {
++		WARNING("unable to initialise device to TPI mode\n");
++		return ret;
++	}
++
++	/* step 2: detect revision */
++	if ((ret = siihdmi_detect_revision(tx)) < 0) {
++		DEBUG("unable to detect device revision\n");
++		return ret;
++	}
++
++	/* step 3: power up transmitter */
++	if ((ret = siihdmi_power_up(tx)) < 0)
++		return ret;
++
++	/* step 4: configure input bus and pixel repetition */
++
++	/* step 5: select YC input mode */
++
++	/* step 6: configure sync methods */
++
++	/* step 7: configure explicit sync DE generation */
++
++	/* step 8: configure embedded sync extraction */
++
++	/* step 9: setup interrupt service */
++	if (tx->hotplug.enabled) {
++		ret = i2c_smbus_write_byte_data(tx->client,
++						SIIHDMI_TPI_REG_IER,
++						SIIHDMI_IER_HOT_PLUG_EVENT |
++						SIIHDMI_IER_RECEIVER_SENSE_EVENT);
++		if (ret < 0)
++			WARNING("unable to setup interrupt request\n");
++	}
++
++	return ret;
++}
++
++static int siihdmi_read_edid(struct siihdmi_tx *tx, u8 *edid, size_t size)
++{
++	u8 offset, ctrl;
++	int ret;
++	unsigned long start;
++
++	struct i2c_msg request[] = {
++		{ .addr  = EDID_I2C_DDC_DATA_ADDRESS,
++		  .len   = sizeof(offset),
++		  .buf   = &offset, },
++		{ .addr  = EDID_I2C_DDC_DATA_ADDRESS,
++		  .flags = I2C_M_RD,
++		  .len   = size,
++		  .buf   = edid, },
++	};
++
++	/* step 1: (potentially) disable HDCP */
++
++	/* step 2: request the DDC bus */
++	ctrl = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_SYS_CTRL);
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_SYS_CTRL,
++					ctrl | SIIHDMI_SYS_CTRL_DDC_BUS_REQUEST);
++	if (ret < 0) {
++		printk("unable to request DDC bus\n");
++		return ret;
++	}
++
++	/* step 3: poll for bus grant */
++	start = jiffies;
++	do {
++		ctrl = i2c_smbus_read_byte_data(tx->client,
++						SIIHDMI_TPI_REG_SYS_CTRL);
++	} while ((~ctrl & SIIHDMI_SYS_CTRL_DDC_BUS_GRANTED) &&
++		 !time_after(jiffies, start + bus_timeout));
++
++	if (~ctrl & SIIHDMI_SYS_CTRL_DDC_BUS_GRANTED)
++		goto relinquish;
++
++	/* step 4: take ownership of the DDC bus */
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_SYS_CTRL,
++					SIIHDMI_SYS_CTRL_DDC_BUS_REQUEST |
++					SIIHDMI_SYS_CTRL_DDC_BUS_OWNER_HOST);
++	if (ret < 0) {
++		printk("unable to take ownership of the DDC bus\n");
++		goto relinquish;
++	}
++
++	/* step 5: read edid */
++	offset = 0;
++	ret = i2c_transfer(tx->client->adapter, request, ARRAY_SIZE(request));
++	if (ret != ARRAY_SIZE(request))
++		printk("unable to read EDID block %d %d\n", ret, ARRAY_SIZE(request));
++
++relinquish:
++	/* step 6: relinquish ownership of the DDC bus */
++	start = jiffies;
++	do {
++		tx->client->flags |= I2C_M_IGNORE_NAK;
++		i2c_smbus_write_byte_data(tx->client,
++					  SIIHDMI_TPI_REG_SYS_CTRL,
++					  0x00);
++		tx->client->flags &= ~I2C_M_IGNORE_NAK;
++		ctrl = i2c_smbus_read_byte_data(tx->client,
++						SIIHDMI_TPI_REG_SYS_CTRL);
++	} while ((ctrl & SIIHDMI_SYS_CTRL_DDC_BUS_GRANTED) &&
++		 !time_after(jiffies, start + bus_timeout));
++
++	/* step 7: (potentially) enable HDCP */
++
++	return ret;
++}
++
++static inline void _process_cea861_vsdb(struct siihdmi_tx *tx,
++					const struct hdmi_vsdb * const vsdb)
++{
++	unsigned int max_tmds;
++
++	if (memcmp(vsdb->ieee_registration, CEA861_OUI_REGISTRATION_ID_HDMI_LSB,
++		   sizeof(vsdb->ieee_registration)))
++		return;
++
++	max_tmds = KHZ2PICOS(vsdb->max_tmds_clock * 200);
++
++	if (tx->audio.available)
++		tx->sink.type = SINK_TYPE_HDMI;
++
++	DEBUG("HDMI VSDB detected (basic audio %ssupported)\n",
++	      tx->audio.available ? "" : "not ");
++	INFO("HDMI port configuration: %u.%u.%u.%u\n",
++	     vsdb->port_configuration_a, vsdb->port_configuration_b,
++	     vsdb->port_configuration_c, vsdb->port_configuration_d);
++
++	if (max_tmds && max_tmds < tx->platform->pixclock) {
++		INFO("maximum TMDS clock limited to %u by device\n", max_tmds);
++		tx->platform->pixclock = max_tmds;
++	}
++}
++
++static inline void _process_cea861_video(struct siihdmi_tx *tx,
++					 const struct cea861_video_data_block * const video)
++{
++	const struct cea861_data_block_header * const header =
++		(struct cea861_data_block_header *) video;
++	u8 i, count;
++
++	for (i = 0, count = 0; i < header->length; i++) {
++		const int vic = video->svd[i] & ~CEA861_SVD_NATIVE_FLAG;
++
++		if (vic && vic <= ARRAY_SIZE(cea_modes)) {
++			fb_add_videomode(&cea_modes[vic], &tx->info->modelist);
++			count++;
++		}
++	}
++
++	DEBUG("%u modes parsed from CEA video data block\n", count);
++}
++
++static inline void _process_cea861_extended(struct siihdmi_tx *tx,
++					    const struct cea861_data_block_extended *ext)
++{
++	static const char * const scannings[] = {
++		[SCAN_INFORMATION_UNKNOWN]      = "unknown",
++		[SCAN_INFORMATION_OVERSCANNED]  = "overscanned",
++		[SCAN_INFORMATION_UNDERSCANNED] = "underscanned",
++		[SCAN_INFORMATION_RESERVED]     = "reserved",
++	};
++
++	switch (ext->extension_tag) {
++	case CEA861_DATA_BLOCK_EXTENSION_VIDEO_CAPABILITY: {
++		const struct cea861_video_capability_block * const vcb =
++			(struct cea861_video_capability_block *) ext;
++		INFO("CEA video capability (scanning behaviour):\n"
++		     "    Preferred Mode: %s\n"
++		     "    VESA/PC Mode: %s\n"
++		     "    CEA/TV Mode: %s\n",
++		     scannings[vcb->pt_overunder_behavior],
++		     scannings[vcb->it_overunder_behavior],
++		     scannings[vcb->ce_overunder_behavior]);
++		}
++		break;
++	default:
++		break;
++	}
++}
++
++static void siihdmi_parse_cea861_timing_block(struct siihdmi_tx *tx,
++					      const struct edid_extension *ext)
++{
++	const struct cea861_timing_block * const cea = (struct cea861_timing_block *) ext;
++	const u8 size = cea->dtd_offset - offsetof(struct cea861_timing_block, data);
++	u8 index;
++
++	BUILD_BUG_ON(sizeof(*cea) != sizeof(*ext));
++
++	tx->audio.available = cea->basic_audio_supported;
++	if (cea->underscan_supported)
++		tx->sink.scanning = SCANNING_UNDERSCANNED;
++
++	if (cea->dtd_offset == CEA861_NO_DTDS_PRESENT)
++		return;
++
++	index = 0;
++	while (index < size) {
++		const struct cea861_data_block_header * const header =
++			(struct cea861_data_block_header *) &cea->data[index];
++
++		switch (header->tag) {
++		case CEA861_DATA_BLOCK_TYPE_VENDOR_SPECIFIC:
++			_process_cea861_vsdb(tx, (struct hdmi_vsdb *) header);
++			break;
++		case CEA861_DATA_BLOCK_TYPE_VIDEO:
++			_process_cea861_video(tx, (struct cea861_video_data_block *) header);
++			break;
++		case CEA861_DATA_BLOCK_TYPE_EXTENDED:
++			_process_cea861_extended(tx, (struct cea861_data_block_extended *) header);
++			break;
++		}
++
++		index = index + header->length + sizeof(*header);
++	}
++}
++
++static void siihdmi_set_vmode_registers(struct siihdmi_tx *tx,
++					const struct fb_videomode *mode)
++{
++	enum basic_video_mode_fields {
++		PIXEL_CLOCK,
++		REFRESH_RATE,
++		X_RESOLUTION,
++		Y_RESOLUTION,
++		FIELDS,
++	};
++
++	u16 vmode[FIELDS];
++	u32 pixclk, htotal, vtotal, refresh;
++	u8 format;
++	int ret;
++
++	BUILD_BUG_ON(sizeof(vmode) != 8);
++
++	pixclk = mode->pixclock ? PICOS2KHZ(mode->pixclock) : 0;
++	BUG_ON(pixclk == 0);
++
++	htotal = mode->xres + mode->left_margin + mode->hsync_len + mode->right_margin;
++	vtotal = mode->yres + mode->upper_margin + mode->vsync_len + mode->lower_margin;
++
++	/* explicitly use 64-bit division to avoid overflow truncation */
++	refresh = (u32) div_u64(pixclk * 1000ull, htotal * vtotal);
++
++	/* basic video mode data */
++	vmode[PIXEL_CLOCK]  = (u16) (pixclk / 10);
++	/*
++	  Silicon Image example code implies refresh to be 6000 for 60Hz?
++	  This may work simply because we only test it on little-endian :(
++	*/
++	vmode[REFRESH_RATE] = (u16) refresh;
++	vmode[X_RESOLUTION] = (u16) htotal;
++	vmode[Y_RESOLUTION] = (u16) vtotal;
++
++	ret = i2c_smbus_write_i2c_block_data(tx->client,
++					     SIIHDMI_TPI_REG_VIDEO_MODE_DATA_BASE,
++					     sizeof(vmode),
++					     (u8 *) vmode);
++	if (ret < 0)
++		DEBUG("unable to write video mode data\n");
++
++	/* input format */
++	format = SIIHDMI_INPUT_COLOR_SPACE_RGB
++	       | SIIHDMI_INPUT_VIDEO_RANGE_EXPANSION_AUTO
++	       | SIIHDMI_INPUT_COLOR_DEPTH_8BIT;
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_AVI_INPUT_FORMAT,
++					format);
++	if (ret < 0)
++		DEBUG("unable to set input format\n");
++
++	/* output format */
++	format = SIIHDMI_OUTPUT_VIDEO_RANGE_COMPRESSION_AUTO
++	       | SIIHDMI_OUTPUT_COLOR_STANDARD_BT601
++	       | SIIHDMI_OUTPUT_COLOR_DEPTH_8BIT;
++
++	if (tx->sink.type == SINK_TYPE_HDMI)
++		format |= SIIHDMI_OUTPUT_FORMAT_HDMI_RGB;
++	else
++		format |= SIIHDMI_OUTPUT_FORMAT_DVI_RGB;
++
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_AVI_OUTPUT_FORMAT,
++					format);
++	if (ret < 0)
++		DEBUG("unable to set output format\n");
++}
++
++static int siihdmi_clear_avi_info_frame(struct siihdmi_tx *tx)
++{
++	const u8 buffer[SIIHDMI_TPI_REG_AVI_INFO_FRAME_LENGTH] = {0};
++	int ret;
++
++	BUG_ON(tx->sink.type != SINK_TYPE_DVI);
++
++	ret = i2c_smbus_write_i2c_block_data(tx->client,
++					     SIIHDMI_TPI_REG_AVI_INFO_FRAME_BASE,
++					     sizeof(buffer), buffer);
++	if (ret < 0)
++		DEBUG("unable to clear avi info frame\n");
++
++	return ret;
++}
++
++static int siihdmi_set_avi_info_frame(struct siihdmi_tx *tx)
++{
++	int ret;
++	struct avi_info_frame avi = {
++		.header = {
++			.type    = INFO_FRAME_TYPE_AUXILIARY_VIDEO_INFO,
++			.version = CEA861_AVI_INFO_FRAME_VERSION,
++			.length  = sizeof(avi) - sizeof(avi.header),
++		},
++
++		.active_format_info_valid  = true,
++		.active_format_description = ACTIVE_FORMAT_DESCRIPTION_UNSCALED,
++
++		.picture_aspect_ratio      = PICTURE_ASPECT_RATIO_UNSCALED,
++
++		.video_format              = VIDEO_FORMAT_UNKNOWN,
++	};
++
++	BUG_ON(tx->sink.type != SINK_TYPE_HDMI);
++
++	switch (tx->sink.scanning) {
++	case SCANNING_UNDERSCANNED:
++		avi.scan_information = SCAN_INFORMATION_UNDERSCANNED;
++		break;
++	case SCANNING_OVERSCANNED:
++		avi.scan_information = SCAN_INFORMATION_OVERSCANNED;
++		break;
++	default:
++		avi.scan_information = SCAN_INFORMATION_UNKNOWN;
++		break;
++	}
++
++	cea861_checksum_hdmi_info_frame((u8 *) &avi);
++
++	BUILD_BUG_ON(sizeof(avi) - SIIHDMI_AVI_INFO_FRAME_OFFSET != SIIHDMI_TPI_REG_AVI_INFO_FRAME_LENGTH);
++	ret = i2c_smbus_write_i2c_block_data(tx->client,
++					     SIIHDMI_TPI_REG_AVI_INFO_FRAME_BASE,
++					     sizeof(avi) - SIIHDMI_AVI_INFO_FRAME_OFFSET,
++					     ((u8 *) &avi) + SIIHDMI_AVI_INFO_FRAME_OFFSET);
++	if (ret < 0)
++		DEBUG("unable to write avi info frame\n");
++
++	return ret;
++}
++
++static int siihdmi_set_audio_info_frame(struct siihdmi_tx *tx)
++{
++	int ret;
++	struct siihdmi_audio_info_frame packet = {
++		.header = {
++			.info_frame = SIIHDMI_INFO_FRAME_AUDIO,
++			.repeat     = false,
++			.enable     = tx->audio.available,
++		},
++
++		.info_frame = {
++			.header = {
++				.type    = INFO_FRAME_TYPE_AUDIO,
++				.version = CEA861_AUDIO_INFO_FRAME_VERSION,
++				.length  = sizeof(packet.info_frame) - sizeof(packet.info_frame.header),
++			},
++
++			.channel_count         = CHANNEL_COUNT_REFER_STREAM_HEADER,
++			.channel_allocation    = CHANNEL_ALLOCATION_STEREO,
++
++			.format_code_extension = CODING_TYPE_REFER_STREAM_HEADER,
++
++			/* required to Refer to Stream Header by CEA861-D */
++			.coding_type           = CODING_TYPE_REFER_STREAM_HEADER,
++
++			.sample_size           = SAMPLE_SIZE_REFER_STREAM_HEADER,
++			.sample_frequency      = FREQUENCY_REFER_STREAM_HEADER,
++		},
++	};
++
++	BUG_ON(tx->sink.type != SINK_TYPE_HDMI);
++
++	cea861_checksum_hdmi_info_frame((u8 *) &packet.info_frame);
++
++	BUILD_BUG_ON(sizeof(packet) != SIIHDMI_TPI_REG_AUDIO_INFO_FRAME_LENGTH);
++	ret = i2c_smbus_write_i2c_block_data(tx->client,
++					     SIIHDMI_TPI_REG_MISC_INFO_FRAME_BASE,
++					     sizeof(packet),
++					     (u8 *) &packet);
++	if (ret < 0)
++		DEBUG("unable to write audio info frame\n");
++
++	return ret;
++}
++
++static int siihdmi_set_spd_info_frame(struct siihdmi_tx *tx)
++{
++	int ret;
++	struct siihdmi_spd_info_frame packet = {
++		.header = {
++			.info_frame = SIIHDMI_INFO_FRAME_SPD_ACP,
++			.repeat     = false,
++			.enable     = true,
++		},
++
++		.info_frame = {
++			.header = {
++				.type    = INFO_FRAME_TYPE_SOURCE_PRODUCT_DESCRIPTION,
++				.version = CEA861_SPD_INFO_FRAME_VERSION,
++				.length  = sizeof(packet.info_frame) - sizeof(packet.info_frame.header),
++			},
++
++			.source_device_info = SPD_SOURCE_PC_GENERAL,
++		},
++	};
++
++	BUG_ON(tx->sink.type != SINK_TYPE_HDMI);
++
++	strncpy(packet.info_frame.vendor, tx->platform->vendor,
++		sizeof(packet.info_frame.vendor));
++
++	strncpy(packet.info_frame.description, tx->platform->description,
++		sizeof(packet.info_frame.description));
++
++	cea861_checksum_hdmi_info_frame((u8 *) &packet.info_frame);
++
++	BUILD_BUG_ON(sizeof(packet) != SIIHDMI_TPI_REG_MISC_INFO_FRAME_LENGTH);
++	ret = i2c_smbus_write_i2c_block_data(tx->client,
++					     SIIHDMI_TPI_REG_MISC_INFO_FRAME_BASE,
++					     sizeof(packet),
++					     (u8 *) &packet);
++	if (ret < 0)
++		DEBUG("unable to write SPD info frame\n");
++
++	return ret;
++}
++
++static inline void siihdmi_audio_mute(struct siihdmi_tx *tx)
++{
++	u8 data;
++
++	data = i2c_smbus_read_byte_data(tx->client,
++					SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL);
++
++	i2c_smbus_write_byte_data(tx->client,
++				  SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL,
++				  data | SIIHDMI_AUDIO_MUTE);
++}
++
++static inline void siihdmi_audio_unmute(struct siihdmi_tx *tx)
++{
++	u8 data;
++
++	data = i2c_smbus_read_byte_data(tx->client,
++					SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL);
++
++	i2c_smbus_write_byte_data(tx->client,
++				  SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL,
++				  data & ~SIIHDMI_AUDIO_MUTE);
++}
++
++static inline void siihdmi_configure_audio(struct siihdmi_tx *tx)
++{
++	siihdmi_audio_mute(tx);
++
++	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL, SIIHDMI_AUDIO_I2S_ENABLE |
++			SIIHDMI_AUDIO_MUTE);
++	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_AUDIO_SAMPLING_HBR, SIIHDMI_AUDIO_SAMPLING_DEPTH_16_BIT |
++			SIIHDMI_AUDIO_SAMPLING_FREQUENCY_96_KHZ);
++	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_ORIGINAL_FREQ_SAMPLE_LENGTH, SIIHDMI_AUDIO_HANDLING_DOWN_SAMPLE);
++
++	siihdmi_audio_unmute(tx);
++	siihdmi_set_audio_info_frame(tx);
++}
++
++static void siihdmi_print_modeline(const struct siihdmi_tx *tx,
++				   const struct fb_videomode *mode,
++				   const char * const message)
++{
++	const bool interlaced = (mode->vmode & FB_VMODE_INTERLACED);
++	const bool double_scan = (mode->vmode & FB_VMODE_DOUBLE);
++
++	u32 pixclk = mode->pixclock ? PICOS2KHZ(mode->pixclock) : 0;
++	char flag = ' ';
++
++	pixclk >>= (double_scan ? 1 : 0);
++
++	if (fb_mode_is_equal(&tx->sink.preferred_mode, mode))
++		flag = '*';
++
++	/*if (mode->flag & FB_MODE_IS_CEA)
++		flag = 'C';*/
++
++	INFO("  %c \"%dx%d@%d%s\" %lu.%.2lu %u %u %u %u %u %u %u %u %chsync %cvsync",
++	     /* CEA or preferred status of modeline */
++	     flag,
++
++	     /* mode name */
++	     mode->xres, mode->yres,
++	     mode->refresh << (interlaced ? 1 : 0),
++	     interlaced ? "i" : (double_scan ? "d" : ""),
++
++	     /* dot clock frequency (MHz) */
++	     pixclk / 1000ul,
++	     pixclk % 1000ul,
++
++	     /* horizontal timings */
++	     mode->xres,
++	     mode->xres + mode->right_margin,
++	     mode->xres + mode->right_margin + mode->hsync_len,
++	     mode->xres + mode->right_margin + mode->hsync_len + mode->left_margin,
++
++	     /* vertical timings */
++	     mode->yres,
++	     mode->yres + mode->lower_margin,
++	     mode->yres + mode->lower_margin + mode->vsync_len,
++	     mode->yres + mode->lower_margin + mode->vsync_len + mode->upper_margin,
++
++	     /* sync direction */
++	     (mode->sync & FB_SYNC_HOR_HIGH_ACT) ? '+' : '-',
++	     (mode->sync & FB_SYNC_VERT_HIGH_ACT) ? '+' : '-');
++
++	if (message)
++		CONTINUE(" (%s)", message);
++
++	CONTINUE("\n");
++}
++
++static int siihdmi_set_resolution(struct siihdmi_tx *tx,
++				  const struct fb_videomode *mode)
++{
++	u8 ctrl;
++	int ret;
++
++	//siihdmi_initialise(tx);
++
++	if (0 == memcmp((void *) &tx->sink.current_mode, (void *) mode, sizeof(struct fb_videomode)))
++	{
++		return 0;
++	}
++
++	memset((void *) &tx->sink.current_mode, 0, sizeof(struct fb_videomode));
++
++	INFO("selected configuration: \n");
++	siihdmi_print_modeline(tx, mode, NULL);
++
++	ctrl = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_SYS_CTRL);
++
++	/* setup the sink type */
++	if (tx->sink.type == SINK_TYPE_DVI)
++		ctrl &= ~SIIHDMI_SYS_CTRL_OUTPUT_MODE_SELECT_HDMI;
++	else
++		ctrl |= SIIHDMI_SYS_CTRL_OUTPUT_MODE_SELECT_HDMI;
++
++	/* step 1: (potentially) disable HDCP */
++
++	/* step 2: (optionally) blank the display */
++	/*
++	 * Note that if we set the AV Mute, switching to DVI could result in a
++	 * permanently muted display until a hardware reset.  Thus only do this
++	 * if the sink is a HDMI connection
++	 */
++	if (tx->sink.type == SINK_TYPE_HDMI)
++		ctrl |= SIIHDMI_SYS_CTRL_AV_MUTE_HDMI;
++	/* optimisation: merge the write into the next one */
++
++	/* step 3: prepare for resolution change */
++	ctrl |= SIIHDMI_SYS_CTRL_TMDS_OUTPUT_POWER_DOWN;
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_SYS_CTRL,
++					ctrl);
++	if (ret < 0)
++		DEBUG("unable to prepare for resolution change\n");
++
++	msleep(SIIHDMI_CTRL_INFO_FRAME_DRAIN_TIME);
++
++	/* step 4: change video resolution */
++
++	/* step 5: set the vmode registers */
++	siihdmi_set_vmode_registers(tx, mode);
++
++	/*
++	 * step 6:
++	 *      [DVI]  clear AVI InfoFrame
++	 *      [HDMI] set AVI InfoFrame
++	 */
++	if (tx->sink.type == SINK_TYPE_HDMI)
++		siihdmi_set_avi_info_frame(tx);
++	else
++		siihdmi_clear_avi_info_frame(tx);
++
++	/* step 7: [HDMI] set new audio information */
++	if (tx->sink.type == SINK_TYPE_HDMI) {
++		if (tx->audio.available)
++		{
++			siihdmi_configure_audio(tx);
++		}
++		siihdmi_set_spd_info_frame(tx);
++	}
++
++	/* step 8: enable display */
++	ctrl &= ~SIIHDMI_SYS_CTRL_TMDS_OUTPUT_POWER_DOWN;
++	/* optimisation: merge the write into the next one */
++
++	/* step 9: (optionally) un-blank the display */
++	ctrl &= ~SIIHDMI_SYS_CTRL_AV_MUTE_HDMI;
++	ret = i2c_smbus_write_byte_data(tx->client,
++					SIIHDMI_TPI_REG_SYS_CTRL,
++					ctrl);
++	if (ret < 0)
++		DEBUG("unable to enable the display\n");
++
++	/* step 10: (potentially) enable HDCP */
++
++	memcpy((void *) &tx->sink.current_mode, mode, sizeof(struct fb_videomode));
++
++	return ret;
++}
++
++static void siihdmi_dump_modelines(struct siihdmi_tx *tx)
++{
++	const struct fb_modelist *entry;
++	const struct list_head * const modelines = &tx->info->modelist;
++
++	INFO("supported modelines:\n");
++	list_for_each_entry(entry, modelines, list)
++		siihdmi_print_modeline(tx, &entry->mode, NULL);
++}
++
++static inline void siihdmi_process_extensions(struct siihdmi_tx *tx)
++{
++	const struct edid_block0 * const block0 =
++		(struct edid_block0 *) tx->edid.data;
++	const struct edid_extension * const extensions =
++		(struct edid_extension *) (tx->edid.data + sizeof(*block0));
++	u8 i;
++
++	for (i = 0; i < block0->extensions; i++) {
++		const struct edid_extension * const extension = &extensions[i];
++
++		if (!edid_verify_checksum((u8 *) extension))
++			WARNING("EDID block %u CRC mismatch\n", i);
++
++		switch (extension->tag) {
++		case EDID_EXTENSION_CEA:
++			siihdmi_parse_cea861_timing_block(tx, extension);
++			break;
++		default:
++			break;
++		}
++	}
++}
++
++static const struct fb_videomode *
++_find_similar_mode(const struct fb_videomode * const mode, struct list_head *head)
++{
++	const struct fb_modelist *entry, *next;
++
++	list_for_each_entry_safe(entry, next, head, list) {
++		if (fb_res_is_equal(mode, &entry->mode) && (mode != &entry->mode))
++			return &entry->mode;
++	}
++
++	return NULL;
++}
++
++static void siihdmi_sanitize_modelist(struct siihdmi_tx * const tx)
++{
++	struct list_head *modelist = &tx->info->modelist;
++	const struct fb_modelist *entry, *next;
++	const struct fb_videomode *mode;
++	int num_removed = 0;
++
++	if ((mode = fb_find_best_display(&tx->info->monspecs, modelist)))
++		tx->sink.preferred_mode = *mode;
++
++
++	list_for_each_entry_safe(entry, next, modelist, list) {
++		const char *reason = NULL;
++		mode = &entry->mode;
++
++		if (mode->vmode & FB_VMODE_INTERLACED) {
++			reason = "interlaced";
++		} else if (mode->vmode & FB_VMODE_DOUBLE) {
++			reason = "doublescan";
++		} else if (mode->pixclock < tx->platform->pixclock) {
++			reason = "pixel clock exceeded";
++		} else if ((tx->sink.type == SINK_TYPE_HDMI) && mode->lower_margin < 2) {
++			/*
++			 * HDMI spec (§ 5.1.2) stipulates ≥2 lines of vsync
++			 *
++			 * We do not care so much on DVI, although it may be that the SII9022 cannot
++			 * actually display this mode. Requires testing!!
++			 */
++			reason = "insufficient margin";
++		} else {
++			const struct fb_videomode *match = _find_similar_mode(mode, modelist);
++
++			if (match) {
++				/*
++				 * Prefer detailed timings found in EDID.  Certain sinks support slight
++				 * variations of VESA/CEA timings, and using those allows us to support
++				 * a wider variety of monitors.
++				 */
++				if ((~(mode->flag) & FB_MODE_IS_DETAILED) &&
++					(match->flag & FB_MODE_IS_DETAILED)) {
++					reason = "detailed match present";
++				} else /*if ((~(mode->flag) & FB_MODE_IS_CEA) &&
++						   (match->flag & FB_MODE_IS_CEA)) */{
++					if ((tx->sink.type == SINK_TYPE_HDMI) && !useitmodes) {
++						/*
++						 * for HDMI connections we want to remove any detailed timings
++						 * and leave in CEA mode timings. This is on the basis that you
++						 * would expect HDMI monitors to do better with CEA (TV) modes
++						 * than you would PC modes. No data is truly lost: these modes
++						 * are duplicated in terms of size and refresh but may have
++						 * subtle differences insofaras more compatible timings.
++						 *
++						 * That is, unless we want to prefer IT modes, since most TVs
++						 * will overscan CEA modes (720p, 1080p) by default, but display
++						 * IT (PC) modes to the edge of the screen.
++						 */
++						reason = "CEA match present";
++					} else {
++						/*
++						 * DVI connections are the opposite to the above; remove CEA
++						 * modes which duplicate normal modes, on the basis that a
++						 * DVI sink will better display a standard EDID mode but may
++						 * not be fully compatible with CEA timings. This is the
++						 * behavior on HDMI sinks if we want to prefer IT modes.
++						 *
++						 * All we do is copy the matched mode into the mode value
++						 * such that we remove the correct mode below.
++						 */
++						mode = match;
++						reason = "IT match present";
++					}
++				}
++			}
++		}
++
++		if (reason) {
++			struct fb_modelist *modelist =
++				container_of(mode, struct fb_modelist, mode);
++
++			if (num_removed == 0) { // first time only
++				INFO("Unsupported modelines:\n");
++			}
++
++			siihdmi_print_modeline(tx, mode, reason);
++
++			list_del(&modelist->list);
++			kfree(&modelist->list);
++			num_removed++;
++		}
++	}
++
++	if (num_removed > 0) {
++		INFO("discarded %u incompatible modes\n", num_removed);
++	}
++}
++
++static inline const struct fb_videomode *_match(const struct fb_videomode * const mode,
++						struct list_head *modelist)
++{
++	const struct fb_videomode *match;
++
++	if ((match = fb_find_best_mode_at_most(mode, modelist)))
++		return match;
++
++	return fb_find_nearest_mode(mode, modelist);
++}
++
++static const struct fb_videomode *siihdmi_select_video_mode(const struct siihdmi_tx * const tx)
++{
++	const struct fb_videomode *mode = NULL;
++
++	goto out;
++	/*
++	 * match a mode against a specific CEA VIC - closest mode wins, we don't bother
++	 * to check if the specified mode refresh, interlace or clocking is valid since
++	 * it can only return similar but working modes from the sanitized modelist
++	 * anyway
++	 */
++
++	if (modevic && modevic <= ARRAY_SIZE(cea_modes)) {
++		mode = _match(&cea_modes[modevic], &tx->info->modelist);
++		if (mode && (mode->xres == cea_modes[modevic].xres)
++			 && (mode->yres == cea_modes[modevic].yres))
++				return mode;
++	}
++
++	/*
++	 * The whole point of these two options (siihdmi.seventwenty & siihdmi.teneighty)
++	 * is that we want to find a mode which most displays will have optimized scalers for.
++
++	 * Even if the native panel resolution is not precisely 1080p or 720p, most TVs will
++	 * use high quality scaler for the standard HD display resolutions, but use more
++	 * crude algorithms for other more odd modes.
++	 *
++	 * That said..
++	 *
++	 * We specifically handle plasma screens and cheap TVs where the preferred mode is
++	 * so close to 1080p or 720p that we may as well try it by default as part of the
++	 * search, therefore we get better native panel resolution and similar performance
++	 * which should make people all the happier. There are a lot of HDMI monitors with
++	 * 1680x1050 or 1440x900 panels and most plasma screens come in at 1360x768 or even
++	 * 1024x768. The search is actually therefore "get as close to 1080p as my monitor
++	 * will manage" or "get as close to 720p without being blurry on my 62in monster".
++	 */
++
++	if (teneighty) {
++		if ((tx->sink.preferred_mode.xres == 1680 && tx->sink.preferred_mode.yres == 1050) ||
++		    (tx->sink.preferred_mode.xres == 1440 && tx->sink.preferred_mode.yres == 900)) {
++			mode = _match(&tx->sink.preferred_mode, &tx->info->modelist);
++			if (mode && (mode->xres == tx->sink.preferred_mode.xres)
++				 && (mode->yres == tx->sink.preferred_mode.yres))
++				return mode;
++		}
++
++		mode = _match(&cea_modes[34], &tx->info->modelist);
++		if (mode && (mode->xres == 1920) && (mode->yres == 1080))
++			return mode;
++	}
++
++	if (seventwenty) {
++		if ((tx->sink.preferred_mode.xres == 1360 ||
++		     tx->sink.preferred_mode.xres == 1366 ||
++		     tx->sink.preferred_mode.xres == 1024 ||
++		     tx->sink.preferred_mode.xres == 1280) &&
++		    (tx->sink.preferred_mode.yres == 768 ||
++		     tx->sink.preferred_mode.yres == 800) ) {
++			mode = _match(&tx->sink.preferred_mode, &tx->info->modelist);
++			if (mode && (mode->xres == tx->sink.preferred_mode.xres)
++				 && (mode->yres == tx->sink.preferred_mode.yres))
++				return mode;
++		}
++
++		mode = _match(&cea_modes[4], &tx->info->modelist);
++		if (mode && (mode->xres == 1280) && (mode->yres == 720))
++			return mode;
++	}
++
++	/* If we disabled or couldn't find a reasonable mode above, just look for and use the
++	 * closest to the monitor preferred mode - we don't care if it is not exact */
++	if (tx->sink.preferred_mode.xres && tx->sink.preferred_mode.yres)
++		if ((mode = _match(&tx->sink.preferred_mode, &tx->info->modelist)))
++			return mode;
++
++	/* if no matching mode was found, push 640x480@60 */
++	INFO("unable to select a suitable video mode, using CEA Mode 1\n");
++	//return &cea_modes[1];
++out:
++	return &vesa_modes[8];
++	//return &cea_modes[1];
++}
++
++static int siihdmi_setup_display(struct siihdmi_tx *tx)
++{
++	const struct fb_videomode *mode;
++	struct fb_var_screeninfo var = {0};
++	struct edid_block0 block0;
++	int i, ret;
++	u8 isr;
++
++	BUILD_BUG_ON(sizeof(struct edid_block0) != EDID_BLOCK_SIZE);
++	BUILD_BUG_ON(sizeof(struct edid_extension) != EDID_BLOCK_SIZE);
++
++	/* defaults */
++	tx->sink.scanning   = SCANNING_EXACT;
++	tx->sink.type       = SINK_TYPE_HDMI;
++	//tx->sink.type       = SINK_TYPE_DVI;
++	tx->audio.available = false;
++
++	isr = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_ISR);
++	printk("hotplug: display %s, powered %s\n",
++	      (isr & SIIHDMI_ISR_DISPLAY_ATTACHED) ? "attached" : "detached",
++	      (isr & SIIHDMI_ISR_RECEIVER_SENSE) ? "on" : "off");
++
++	if (~isr & (SIIHDMI_ISR_DISPLAY_ATTACHED))
++		return siihdmi_power_down(tx);
++
++	if (tx->info)
++		sysfs_remove_link(&tx->info->dev->kobj, "device");
++
++	for (i = 0, tx->info = NULL; i < num_registered_fb; i++) {
++		struct fb_info * const info = registered_fb[i];
++		if (!strcmp(info->fix.id, tx->platform->framebuffer)) {
++			tx->info = info;
++
++			if (sysfs_create_link_nowarn(&tx->info->dev->kobj,
++					      &tx->client->dev.kobj,
++					      "phys-link") < 0)
++				ERROR("failed to create device symlink");
++
++			break;
++		}
++	}
++
++	if (tx->info == NULL) {
++		ERROR("unable to find video framebuffer\n");
++		return -1;
++	}
++
++#if 1
++	/* use EDID to detect sink characteristics */
++	if ((ret = siihdmi_read_edid(tx, (u8 *) &block0, sizeof(block0))) < 0)
++		return ret;
++
++	if (!edid_verify_checksum((u8 *) &block0))
++		WARNING("EDID block 0 CRC mismatch\n");
++
++	/* need to allocate space for block 0 as well as the extensions */
++	tx->edid.length = (block0.extensions + 1) * EDID_BLOCK_SIZE;
++
++	if (tx->edid.data)
++		kfree(tx->edid.data);
++	tx->edid.data = kzalloc(tx->edid.length, GFP_KERNEL);
++	if (!tx->edid.data)
++		return -ENOMEM;
++
++	if ((ret = siihdmi_read_edid(tx, tx->edid.data, tx->edid.length)) < 0)
++		return ret;
++
++	/* create monspecs from EDID for the basic stuff */
++	fb_edid_to_monspecs(tx->edid.data, &tx->info->monspecs);
++	fb_videomode_to_modelist(tx->info->monspecs.modedb,
++				 tx->info->monspecs.modedb_len,
++				 &tx->info->modelist);
++
++	if (block0.extensions)
++		siihdmi_process_extensions(tx);
++
++	siihdmi_sanitize_modelist(tx);
++	siihdmi_dump_modelines(tx);
++#endif
++	mode = siihdmi_select_video_mode(tx);
++	//if ((ret = siihdmi_set_resolution(tx, mode)) < 0)
++	//	return ret;
++
++	/* activate the framebuffer */
++	fb_videomode_to_var(&var, mode);
++	var.activate = FB_ACTIVATE_ALL;
++
++	console_lock();
++	tx->info->flags |= FBINFO_MISC_USEREVENT;
++	fb_set_var(tx->info, &var);
++	tx->info->flags &= ~FBINFO_MISC_USEREVENT;
++	console_unlock();
++
++	return 0;
++}
++
++static int siihdmi_blank(struct siihdmi_tx *tx)
++{
++	u8 data;
++
++	data = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_RQB);
++
++	return i2c_smbus_write_byte_data(tx->client,
++					 SIIHDMI_TPI_REG_RQB,
++					 data | SIIHDMI_RQB_FORCE_VIDEO_BLANK);
++}
++
++static int siihdmi_unblank(struct siihdmi_tx *tx)
++{
++	u8 data;
++
++	data = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_RQB);
++
++	return i2c_smbus_write_byte_data(tx->client,
++					 SIIHDMI_TPI_REG_RQB,
++					 data & ~SIIHDMI_RQB_FORCE_VIDEO_BLANK);
++}
++
++static int siihdmi_fb_event_handler(struct notifier_block *nb,
++				    unsigned long val,
++				    void *v)
++{
++	const struct fb_event * const event = v;
++	struct siihdmi_tx * const tx = container_of(nb, struct siihdmi_tx, nb);
++	struct fb_videomode *mode;
++
++	if (strcmp(event->info->fix.id, tx->platform->framebuffer))
++		return 0;
++
++	switch (val) {
++	case FB_EVENT_FB_REGISTERED:
++	case FB_EVENT_FB_UNREGISTERED:
++		return siihdmi_setup_display(tx);
++
++	case FB_EVENT_MODE_CHANGE:
++		mode = event->data;
++		//if (event->info->mode)
++			//return siihdmi_set_resolution(tx, mode);
++	case FB_EVENT_MODE_CHANGE_ALL:
++		/* is handled above, removes a "unhandled event" warning in dmesg */
++		break;
++	case FB_EVENT_BLANK:
++		switch (*((int *) event->data)) {
++			case FB_BLANK_POWERDOWN:
++				/* do NOT siihdmi_power_down() here */
++			case FB_BLANK_VSYNC_SUSPEND:
++			case FB_BLANK_HSYNC_SUSPEND:
++			case FB_BLANK_NORMAL:
++				return siihdmi_blank(tx);
++			case FB_BLANK_UNBLANK:
++				return siihdmi_unblank(tx);
++		}
++		break;
++	default:
++		DEBUG("unhandled fb event 0x%lx", val);
++		break;
++	}
++
++	return 0;
++}
++
++static irqreturn_t siihdmi_hotplug_handler(int irq, void *dev_id)
++{
++	struct siihdmi_tx *tx = ((struct siihdmi_tx *) dev_id);
++
++	schedule_work(&tx->hotplug.handler);
++	//msecs_to_jiffies(SIIHDMI_HOTPLUG_HANDLER_TIMEOUT));
++
++	return IRQ_HANDLED;
++}
++
++static void siihdmi_hotplug_event(struct work_struct *work)
++{
++	char *connected[]    = { "DISPLAY_CONNECTED=1", NULL };
++	char *disconnected[] = { "DISPLAY_CONNECTED=0", NULL };
++	char *power_on[]     = { "DISPLAY_POWERED_ON=1", NULL };
++	char *power_off[]    = { "DISPLAY_POWERED_ON=0", NULL };
++
++	struct siihdmi_tx *tx =
++		container_of(work, struct siihdmi_tx, hotplug.handler);
++	u8 isr;
++
++	isr = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_ISR);
++	if (~isr & SIIHDMI_ISR_HOT_PLUG_EVENT)
++		goto complete;
++
++	DEBUG("hotplug: display %s, powered %s\n",
++	      (isr & SIIHDMI_ISR_DISPLAY_ATTACHED) ? "attached" : "detached",
++	      (isr & SIIHDMI_ISR_RECEIVER_SENSE) ? "on" : "off");
++
++	if (isr & SIIHDMI_ISR_HOT_PLUG_EVENT) {
++		if (isr & SIIHDMI_ISR_DISPLAY_ATTACHED)
++			kobject_uevent_env(&tx->client->dev.kobj, KOBJ_CHANGE,
++					   connected);
++		else
++			kobject_uevent_env(&tx->client->dev.kobj, KOBJ_CHANGE,
++					   disconnected);
++	}
++
++	if (isr & SIIHDMI_ISR_RECEIVER_SENSE_EVENT) {
++		if (isr & SIIHDMI_ISR_RECEIVER_SENSE)
++			kobject_uevent_env(&tx->client->dev.kobj, KOBJ_CHANGE,
++					   power_on);
++		else
++			kobject_uevent_env(&tx->client->dev.kobj, KOBJ_CHANGE,
++					   power_off);
++	}
++
++	if (isr & (SIIHDMI_ISR_DISPLAY_ATTACHED | SIIHDMI_ISR_RECEIVER_SENSE)) {
++		siihdmi_initialise(tx);
++		siihdmi_setup_display(tx);
++	} else {
++		siihdmi_power_down(tx);
++	}
++
++complete:
++	/* clear the interrupt */
++	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_ISR, isr);
++}
++
++#if defined(CONFIG_SYSFS)
++static ssize_t siihdmi_sysfs_read_edid(struct kobject *kobj,
++				       struct bin_attribute *bin_attr,
++				       char *buf, loff_t offset, size_t count)
++{
++	const struct siihdmi_tx * const tx =
++		container_of(bin_attr, struct siihdmi_tx, edid.attributes);
++
++	return memory_read_from_buffer(buf, count, &offset,
++				       tx->edid.data, tx->edid.length);
++}
++
++static ssize_t siihdmi_sysfs_read_audio(struct kobject *kobj,
++					struct bin_attribute *bin_attr,
++					char *buf, loff_t off, size_t count)
++{
++	static const char * const sources[] = { "none\n", "hdmi\n" };
++	const struct siihdmi_tx * const tx =
++		container_of(bin_attr, struct siihdmi_tx, audio.attributes);
++
++	return memory_read_from_buffer(buf, count, &off,
++				       sources[tx->audio.available],
++				       strlen(sources[tx->audio.available]));
++}
++#endif
++
++static int __devinit siihdmi_probe(struct i2c_client *client,
++				   const struct i2c_device_id *id)
++{
++	struct siihdmi_tx *tx;
++	int ret;
++
++	tx = kzalloc(sizeof(struct siihdmi_tx), GFP_KERNEL);
++	if (!tx)
++		return -ENOMEM;
++
++	tx->client = client;
++	tx->platform = client->dev.platform_data;
++
++	i2c_set_clientdata(client, tx);
++#if 0
++	INIT_WORK(&tx->hotplug.handler, siihdmi_hotplug_event);
++
++	BUG_ON(~tx->platform->hotplug.flags & IORESOURCE_IRQ);
++
++	ret = request_irq(tx->platform->hotplug.start, siihdmi_hotplug_handler,
++			  tx->platform->hotplug.flags & IRQF_TRIGGER_MASK,
++			  tx->platform->hotplug.name, tx);
++	if (ret < 0)
++		WARNING("failed to setup hotplug interrupt: %d\n", ret);
++	else
++		tx->hotplug.enabled = true;
++#endif
++
++	/* initialise the device */
++	if ((ret = siihdmi_initialise(tx)) < 0)
++		goto error;
++
++	ret = siihdmi_setup_display(tx);
++
++#if defined(CONFIG_SYSFS)
++	/* /sys/<>/edid */
++	tx->edid.attributes.attr.name  = "edid";
++	tx->edid.attributes.attr.mode  = 0444;
++
++	/* maximum size of EDID, not necessarily the size of our data */
++	tx->edid.attributes.size       = SZ_32K;
++	tx->edid.attributes.read       = siihdmi_sysfs_read_edid;
++
++	if (sysfs_create_bin_file(&tx->client->dev.kobj, &tx->edid.attributes) < 0)
++		WARNING("unable to construct attribute for sysfs exported EDID\n");
++#if 0
++	/* /sys/<>/audio */
++	tx->audio.attributes.attr.name  = "audio";
++	tx->audio.attributes.attr.mode  = 0444;
++
++	/* we only want to return the value "hdmi" or "none" */
++	tx->audio.attributes.size       = 5;
++	tx->audio.attributes.read       = siihdmi_sysfs_read_audio;
++
++	if (sysfs_create_bin_file(&tx->client->dev.kobj, &tx->audio.attributes) < 0)
++		WARNING("unable to construct attribute for sysfs exported audio\n");
++#endif
++#endif
++
++	/* register a notifier for future fb events */
++	tx->nb.notifier_call = siihdmi_fb_event_handler;
++	fb_register_client(&tx->nb);
++
++	return 0;
++
++error:
++	i2c_set_clientdata(client, NULL);
++	kfree(tx);
++	return ret;
++}
++
++static int __devexit siihdmi_remove(struct i2c_client *client)
++{
++	struct siihdmi_tx *tx;
++
++	tx = i2c_get_clientdata(client);
++	if (tx) {
++		if (tx->platform->hotplug.start)
++			free_irq(tx->platform->hotplug.start, NULL);
++
++#if defined(CONFIG_SYSFS)
++		sysfs_remove_bin_file(&tx->client->dev.kobj, &tx->edid.attributes);
++		sysfs_remove_bin_file(&tx->client->dev.kobj, &tx->audio.attributes);
++#endif
++
++		if (tx->edid.data)
++			kfree(tx->edid.data);
++
++		fb_unregister_client(&tx->nb);
++		siihdmi_power_down(tx);
++		i2c_set_clientdata(client, NULL);
++		kfree(tx);
++	}
++
++	return 0;
++}
++
++static const struct i2c_device_id siihdmi_device_table[] = {
++	{ "siihdmi", 0 },
++	{ },
++};
++
++static struct i2c_driver siihdmi_driver = {
++	.driver   = { .name = "siihdmi" },
++	.probe    = siihdmi_probe,
++	.remove   = siihdmi_remove,
++	.id_table = siihdmi_device_table,
++};
++
++static int __init siihdmi_init(void)
++{
++	return i2c_add_driver(&siihdmi_driver);
++}
++
++static void __exit siihdmi_exit(void)
++{
++	i2c_del_driver(&siihdmi_driver);
++}
++
++/* Module Information */
++MODULE_AUTHOR("Saleem Abdulrasool <compnerd@compnerd.org>");
++MODULE_LICENSE("BSD-3");
++MODULE_DESCRIPTION("Silicon Image SiI9xxx TMDS Driver");
++MODULE_DEVICE_TABLE(i2c, siihdmi_device_table);
++
++module_init(siihdmi_init);
++module_exit(siihdmi_exit);
+diff --git a/drivers/video/display/siihdmi.h b/drivers/video/display/siihdmi.h
+new file mode 100644
+index 0000000..fc695ac
+--- /dev/null
++++ b/drivers/video/display/siihdmi.h
+@@ -0,0 +1,421 @@
++/* vim: set noet ts=8 sts=8 sw=8 : */
++/*
++ * Copyright © 2010 Saleem Abdulrasool <compnerd@compnerd.org>.
++ * Copyright © 2010 Genesi USA, Inc. <matt@genesi-usa.com>.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright notice,
++ *    this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright notice,
++ *    this list of conditions and the following disclaimer in the documentation
++ *    and/or other materials provided with the distribution.
++ *
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
++ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef LINUX_DRIVERS_VIDEO_SIIHDMI_H
++#define LINUX_DRIVERS_VIDEO_SIIHDMI_H
++
++#include <linux/fb.h>
++#include <linux/cea861.h>
++#include <linux/ioport.h>
++
++/* TPI registers */
++#define SIIHDMI_TPI_REG_VIDEO_MODE_DATA_BASE		(0x00)
++#define SIIHDMI_TPI_REG_PIXEL_CLOCK_LSB			(0x00)
++#define SIIHDMI_TPI_REG_PIXEL_CLOCK_MSB			(0x01)
++#define SIIHDMI_TPI_REG_VFREQ_LSB			(0x02)
++#define SIIHDMI_TPI_REG_VFREQ_MSB			(0x03)
++#define SIIHDMI_TPI_REG_PIXELS_LSB			(0x04)
++#define SIIHDMI_TPI_REG_PIXELS_MSB			(0x05)
++#define SIIHDMI_TPI_REG_LINES_LSB			(0x06)
++#define SIIHDMI_TPI_REG_LINES_MSB			(0x07)
++#define SIIHDMI_TPI_REG_INPUT_BUS_PIXEL_REPETITION	(0x08)
++#define SIIHDMI_TPI_REG_AVI_INPUT_FORMAT		(0x09)
++#define SIIHDMI_TPI_REG_AVI_OUTPUT_FORMAT		(0x0a)
++#define SIIHDMI_TPI_REG_YC_INPUT_MODE			(0x0b)
++#define SIIHDMI_TPI_REG_AVI_DBYTE0			(0x0c)
++#define SIIHDMI_TPI_REG_AVI_DBYTE1			(0x0d)
++#define SIIHDMI_TPI_REG_AVI_DBYTE2			(0x0e)
++#define SIIHDMI_TPI_REG_AVI_DBYTE3			(0x0f)
++#define SIIHDMI_TPI_REG_AVI_DBYTE4			(0x10)
++#define SIIHDMI_TPI_REG_AVI_DBYTE5			(0x11)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_TOP_BAR_LSB	(0x12)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_TOP_BAR_MSB	(0x13)
++#define SIIHDMI_TPI_REG_AVI_INFO_START_BOTTOM_BAR_LSB	(0x14)
++#define SIIHDMI_TPI_REG_AVI_INFO_START_BOTTOM_BAR_MSB	(0x15)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_LEFT_BAR_LSB	(0x16)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_LEFT_BAR_MSB	(0x17)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_RIGHT_BAR_LSB	(0x18)
++#define SIIHDMI_TPI_REG_AVI_INFO_END_RIGHT_BAR_MSB	(0x19)
++#define SIIHDMI_TPI_REG_SYS_CTRL			(0x1a)
++#define SIIHDMI_TPI_REG_DEVICE_ID			(0x1b)
++#define SIIHDMI_TPI_REG_DEVICE_REVISION			(0x1c)
++#define SIIHDMI_TPI_REG_TPI_REVISION			(0x1d)
++#define SIIHDMI_TPI_REG_PWR_STATE			(0x1e)
++#define SIIHDMI_TPI_REG_I2S_ENABLE_MAPPING		(0x1f)
++#define SIIHDMI_TPI_REG_I2S_INPUT_CONFIGURATION		(0x20)
++#define SIIHDMI_TPI_REG_I2S_STREAM_HEADER_SETTINGS_BASE	(0x21)
++#define SIIHDMI_TPI_REG_I2S_CHANNEL_STATUS		(0x21)
++#define SIIHDMI_TPI_REG_I2S_CATEGORY_CODE		(0x22)
++#define SIIHDMI_TPI_REG_I2S_SOURCE_CHANNEL		(0x23)
++#define SIIHDMI_TPI_REG_I2S_ACCURACY_SAMPLING_FREQUENCY	(0x24)
++#define SIIHDMI_TPI_REG_I2S_ORIGINAL_FREQ_SAMPLE_LENGTH	(0x25)
++#define SIIHDMI_TPI_REG_I2S_AUDIO_CONFIGURATION_BASE	(0x26)
++#define SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL	(0x26)
++#define SIIHDMI_TPI_REG_I2S_AUDIO_SAMPLING_HBR		(0x27)
++#define SIIHDMI_TPI_REG_I2S_AUDIO_RESERVED		(0x28)
++#define SIIHDMI_TPI_REG_HDCP_QUERY_DATA			(0x29)
++#define SIIHDMI_TPI_REG_HDCP_CONTROL_DATA		(0x2a)
++#define SIIHDMI_TPI_REG_HDCP_CONTROL_DATA		(0x2a)
++#define SIIHDMI_TPI_REG_HDCP_BKSV_1			(0x2b)
++#define SIIHDMI_TPI_REG_HDCP_BKSV_2			(0x2c)
++#define SIIHDMI_TPI_REG_HDCP_BKSV_3			(0x2d)
++#define SIIHDMI_TPI_REG_HDCP_BKSV_4			(0x2e)
++#define SIIHDMI_TPI_REG_HDCP_BKSV_5			(0x2f)
++#define SIIHDMI_TPI_REG_HDCP_REVISION			(0x30)
++#define SIIHDMI_TPI_REG_HDCP_KSV_V_STAR_VALUE		(0x31)
++#define SIIHDMI_TPI_REG_HDCP_V_STAR_VALUE_1		(0x32)
++#define SIIHDMI_TPI_REG_HDCP_V_STAR_VALUE_2		(0x33)
++#define SIIHDMI_TPI_REG_HDCP_V_STAR_VALUE_3		(0x34)
++#define SIIHDMI_TPI_REG_HDCP_V_STAR_VALUE_4		(0x35)
++#define SIIHDMI_TPI_REG_HDCP_AKSV_1			(0x36)
++#define SIIHDMI_TPI_REG_HDCP_AKSV_2			(0x37)
++#define SIIHDMI_TPI_REG_HDCP_AKSV_3			(0x38)
++#define SIIHDMI_TPI_REG_HDCP_AKSV_4			(0x39)
++#define SIIHDMI_TPI_REG_HDCP_AKSV_5			(0x3a)
++
++#define SIIHDMI_TPI_REG_IER				(0x3c)
++#define SIIHDMI_TPI_REG_ISR				(0x3d)
++
++#define SIIHDMI_INTERNAL_REG_SET_PAGE			(0xbc)
++#define SIIHDMI_INTERNAL_REG_SET_OFFSET			(0xbd)
++#define SIIHDMI_INTERNAL_REG_ACCESS			(0xbe)
++
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_SELECT		(0xbf)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_TYPE		(0xc0)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_VERSION		(0xc1)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_LEN		(0xc2)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE0		(0xc3)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE1		(0xc4)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE2		(0xc5)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE3		(0xc6)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE4		(0xc7)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE5		(0xc8)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE6		(0xc9)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE7		(0xca)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE8		(0xcb)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE9		(0xcc)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE10		(0xcd)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE11		(0xce)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE12		(0xcf)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE13		(0xd0)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE14		(0xd1)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE15		(0xd2)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE16		(0xd3)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE17		(0xd4)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE18		(0xd5)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE19		(0xd6)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE20		(0xd7)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE21		(0xd8)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE22		(0xd9)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE23		(0xda)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE24		(0xdb)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE25		(0xdc)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE26		(0xdd)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE27		(0xde)
++
++#define SIIHDMI_TPI_REG_RQB				(0xc7)
++
++/* driver constants */
++#define SIIHDMI_DEVICE_ID_902x				(0xb0)
++#define SIIHDMI_BASE_TPI_REVISION			(0x29)
++#define SIIHDMI_CTRL_INFO_FRAME_DRAIN_TIME		(0x80)
++
++#define SIIHDMI_HOTPLUG_HANDLER_TIMEOUT			(0x32)
++
++#define SIIHDMI_VERSION_FLAG_VIRTUAL			(1 << 7)
++
++/* Input Bus and Pixel Repetition */
++#define SIIHDMI_PIXEL_REPETITION_DUAL			(1 << 0)
++#define SIIHDMI_PIXEL_REPETITION_QUAD			(3 << 0)
++#define SIIHDMI_INPUT_BUS_EDGE_SELECT_RISING		(1 << 4)
++#define SIIHDMI_INPUT_BUS_SELECT_FULL_PIXEL_WIDTH	(1 << 5)
++#define SIIHDMI_INPUT_BUS_TMDS_CLOCK_RATIO_1X		(1 << 6)
++#define SIIHDMI_INPUT_BUS_TMDS_CLOCK_RATIO_2X		(2 << 6)
++#define SIIHDMI_INPUT_BUS_TMDS_CLOCK_RATIO_4X		(3 << 6)
++
++/* Input Format */
++#define SIIHDMI_INPUT_COLOR_SPACE_RGB			(0 << 0)
++#define SIIHDMI_INPUT_COLOR_SPACE_YUV_444		(1 << 0)
++#define SIIHDMI_INPUT_COLOR_SPACE_YUV_422		(2 << 0)
++#define SIIHDMI_INPUT_COLOR_SPACE_BLACK			(3 << 0)
++#define SIIHDMI_INPUT_VIDEO_RANGE_EXPANSION_AUTO	(0 << 2)
++#define SIIHDMI_INPUT_VIDEO_RANGE_EXPANSION_ON		(1 << 2)
++#define SIIHDMI_INPUT_VIDEO_RANGE_EXPANSION_OFF		(2 << 2)
++#define SIIHDMI_INPUT_COLOR_DEPTH_8BIT			(0 << 6)
++#define SIIHDMI_INPUT_COLOR_DEPTH_10BIT			(2 << 6)
++#define SIIHDMI_INPUT_COLOR_DEPTH_12BIT			(3 << 6)
++#define SIIHDMI_INPUT_COLOR_DEPTH_16BIT			(1 << 6)
++
++/* Output Format */
++#define SIIHDMI_OUTPUT_FORMAT_HDMI_RGB			(0 << 0)
++#define SIIHDMI_OUTPUT_FORMAT_HDMI_YUV_444		(1 << 0)
++#define SIIHDMI_OUTPUT_FORMAT_HDMI_YUV_422		(2 << 0)
++#define SIIHDMI_OUTPUT_FORMAT_DVI_RGB			(3 << 0)
++#define SIIHDMI_OUTPUT_VIDEO_RANGE_COMPRESSION_AUTO	(0 << 2)
++#define SIIHDMI_OUTPUT_VIDEO_RANGE_COMPRESSION_ON	(1 << 2)
++#define SIIHDMI_OUTPUT_VIDEO_RANGE_COMPRESSION_OFF	(2 << 2)
++#define SIIHDMI_OUTPUT_COLOR_STANDARD_BT601		(0 << 4)
++#define SIIHDMI_OUTPUT_COLOR_STANDARD_BT709		(1 << 4)
++#define SIIHDMI_OUTPUT_DITHERING			(1 << 5)
++#define SIIHDMI_OUTPUT_COLOR_DEPTH_8BIT			(0 << 6)
++#define SIIHDMI_OUTPUT_COLOR_DEPTH_10BIT		(2 << 6)
++#define SIIHDMI_OUTPUT_COLOR_DEPTH_12BIT		(3 << 6)
++#define SIIHDMI_OUTPUT_COLOR_DEPTH_16BIT		(1 << 6)
++
++/* System Control */
++#define SIIHDMI_SYS_CTRL_OUTPUT_MODE_SELECT_HDMI	(1 << 0)
++#define SIIHDMI_SYS_CTRL_DDC_BUS_OWNER_HOST		(1 << 1)
++#define SIIHDMI_SYS_CTRL_DDC_BUS_GRANTED		(1 << 1)
++#define SIIHDMI_SYS_CTRL_DDC_BUS_REQUEST		(1 << 2)
++#define SIIHDMI_SYS_CTRL_AV_MUTE_HDMI			(1 << 3)
++#define SIIHDMI_SYS_CTRL_TMDS_OUTPUT_POWER_DOWN		(1 << 4)
++#define SIIHDMI_SYS_CTRL_DYNAMIC_LINK_INTEGRITY		(1 << 6)
++
++/* Device Power State Control Data */
++#define SIIHDMI_POWER_STATE_D0				(0 << 0)
++#define SIIHDMI_POWER_STATE_D1				(1 << 0)
++#define SIIHDMI_POWER_STATE_D2				(2 << 0)
++#define SIIHDMI_POWER_STATE_D3				(3 << 0)
++#define SIIHDMI_WAKEUP_STATE_COLD			(1 << 2)
++
++/* Audio Frequency Sampling Length */
++#define SIIHDMI_AUDIO_HANDLING_PASS_BASIC_AUDIO		(0 << 0)
++#define SIIHDMI_AUDIO_HANDLING_PASS_ALL_AUDIO_MODES	(1 << 0)
++#define SIIHDMI_AUDIO_HANDLING_DOWN_SAMPLE		(2 << 0)
++#define SIIHDMI_AUDIO_HANDLING_UNCHECKED		(3 << 0)
++
++/* Audio Interface Control */
++#define SIIHDMI_AUDIO_MUTE				(1 << 4)
++#define SIIHDMI_AUDIO_DISABLE				(0 << 6)
++#define SIIHDMI_AUDIO_I2S_ENABLE			(2 << 6)
++#define SIIHDMI_AUDIO_SPDIF_ENABLE			(1 << 6)
++
++/* Audio Sampling HBR */
++#define SIIHDMI_AUDIO_SAMPLING_HBR_ENABLE		(1 << 2)
++
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_AUTO		(0 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_32_KHZ		(1 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_44_1_KHZ	(2 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_48_KHZ		(3 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_88_2_KHZ	(4 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_96_KHZ		(5 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_176_4_KHZ	(6 << 3)
++#define SIIHDMI_AUDIO_SAMPLING_FREQUENCY_192_KHZ	(7 << 3)
++
++#define SIIHDMI_AUDIO_SAMPLING_DEPTH_AUTO		(0 << 6)
++#define SIIHDMI_AUDIO_SAMPLING_DEPTH_16_BIT		(1 << 6)
++#define SIIHDMI_AUDIO_SAMPLING_DEPTH_20_BIT		(2 << 6)
++#define SIIHDMI_AUDIO_SAMPLING_DEPTH_24_BIT		(3 << 6)
++
++/* I²S Enable and Mapping */
++#define SIIHDMI_I2S_MAPPING_SELECT_SD_CHANNEL_0		(0 << 0)
++#define SIIHDMI_I2S_MAPPING_SELECT_SD_CHANNEL_1		(1 << 0)
++#define SIIHDMI_I2S_MAPPING_SELECT_SD_CHANNEL_2		(2 << 0)
++#define SIIHDMI_I2S_MAPPING_SELECT_SD_CHANNEL_3		(3 << 0)
++#define SIIHDMI_I2S_MAPPING_SWAP_CHANNELS		(1 << 3)
++#define SIIHDMI_I2S_ENABLE_BASIC_AUDIO_DOWNSAMPLING	(1 << 4)
++#define SIIHDMI_I2S_MAPPING_SELECT_FIFO_0		(0 << 5)
++#define SIIHDMI_I2S_MAPPING_SELECT_FIFO_1		(1 << 5)
++#define SIIHDMI_I2S_MAPPING_SELECT_FIFO_2		(2 << 5)
++#define SIIHDMI_I2S_MAPPING_SELECT_FIFO_3		(3 << 5)
++#define SIIHDMI_I2S_ENABLE_SELECTED_FIFO		(1 << 7)
++
++/* I²S Input Configuration */
++#define SIIHDMI_I2S_WS_TO_SD_FIRST_BIT_SHIFT		(1 << 0)
++#define SIIHDMI_I2S_SD_LSB_FIRST			(1 << 1)
++#define SIIHDMI_I2S_SD_RIGHT_JUSTIFY_DATA		(1 << 2)
++#define SIIHDMI_I2S_WS_POLARITY_HIGH			(1 << 3)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_128			(0 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_256			(1 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_384			(2 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_512			(3 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_768			(4 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_1024		(5 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_1152		(6 << 4)
++#define SIIHDMI_I2S_MCLK_MULTIPLIER_192			(7 << 4)
++#define SIIHDMI_I2S_SCK_SAMPLE_RISING_EDGE		(1 << 7)
++
++/* Interrupt Enable */
++#define SIIHDMI_IER_HOT_PLUG_EVENT			(1 << 0)
++#define SIIHDMI_IER_RECEIVER_SENSE_EVENT		(1 << 1)
++#define SIIHDMI_IER_CTRL_BUS_EVENT			(1 << 2)
++#define SIIHDMI_IER_CPI_EVENT				(1 << 3)
++#define SIIHDMI_IER_AUDIO_EVENT				(1 << 4)
++#define SIIHDMI_IER_SECURITY_STATUS_CHANGE		(1 << 5)
++#define SIIHDMI_IER_HDCP_VALUE_READY			(1 << 6)
++#define SIIHDMI_IER_HDCP_AUTHENTICATION_STATUS_CHANGE	(1 << 7)
++
++/* Interrupt Status */
++#define SIIHDMI_ISR_HOT_PLUG_EVENT			(1 << 0)
++#define SIIHDMI_ISR_RECEIVER_SENSE_EVENT		(1 << 1)
++#define SIIHDMI_ISR_CTRL_BUS_EVENT			(1 << 2)
++#define SIIHDMI_ISR_DISPLAY_ATTACHED			(1 << 2)
++#define SIIHDMI_ISR_CPI_EVENT				(1 << 3)
++#define SIIHDMI_ISR_RECEIVER_SENSE			(1 << 3)
++#define SIIHDMI_ISR_AUDIO_EVENT				(1 << 4)
++#define SIIHDMI_ISR_SECURITY_STATUS_CHANGED		(1 << 5)
++#define SIIHDMI_ISR_HDCP_VALUE_READY			(1 << 6)
++#define SIIHDMI_ISR_HDCP_AUTHENTICATION_STATUS_CHANGED	(1 << 7)
++
++/* Request/Grant/Black Mode */
++#define SIIHDMI_RQB_DDC_BUS_REQUEST			(1 << 0)
++#define SIIHDMI_RQB_DDC_BUS_GRANTED			(1 << 1)
++#define SIIHDMI_RQB_I2C_ACCESS_DDC_BUS			(1 << 2)
++#define SIIHDMI_RQB_FORCE_VIDEO_BLANK			(1 << 5)
++#define SIIHDMI_RQB_TPI_MODE_DISABLE			(1 << 7)
++
++/*
++ * SII HDMI chips have two ways to send HDMI InfoFrames:
++ *   a) AVI InfoFrame is sent via a dedicated TPI register block
++ *   b) Other InfoFrames are sent via a misc TPI register block with a header to
++ *      identifty the InfoFrame data
++ */
++
++/* InfoFrame blocks */
++#define SIIHDMI_TPI_REG_AVI_INFO_FRAME_BASE		(SIIHDMI_TPI_REG_AVI_DBYTE0)
++#define SIIHDMI_TPI_REG_AVI_INFO_FRAME_LENGTH		(SIIHDMI_TPI_REG_AVI_INFO_END_RIGHT_BAR_MSB - SIIHDMI_TPI_REG_AVI_DBYTE0 + 1)
++
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_BASE		(SIIHDMI_TPI_REG_MISC_INFO_FRAME_SELECT)
++#define SIIHDMI_TPI_REG_MISC_INFO_FRAME_LENGTH		(SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE27 - SIIHDMI_TPI_REG_MISC_INFO_FRAME_SELECT + 1)
++
++#define SIIHDMI_TPI_REG_AUDIO_INFO_FRAME_BASE		(SIIHDMI_TPI_REG_MISC_INFO_FRAME_SELECT)
++#define SIIHDMI_TPI_REG_AUDIO_INFO_FRAME_LENGTH		(SIIHDMI_TPI_REG_MISC_INFO_FRAME_DBYTE10 - SIIHDMI_TPI_REG_MISC_INFO_FRAME_SELECT + 1)
++
++/*
++ * AVI InfoFrame is handled specially.  The type, version, and length fields (1
++ * byte each) are skipped in transmission.  We must offset into the standard
++ * structure to skip these fields.
++ */
++#define SIIHDMI_AVI_INFO_FRAME_OFFSET			(0x03)
++
++
++enum siihdmi_info_frame_type {
++	SIIHDMI_INFO_FRAME_NONE,
++	SIIHDMI_INFO_FRAME_SPD_ACP,
++	SIIHDMI_INFO_FRAME_AUDIO,
++	SIIHDMI_INFO_FRAME_MPEG_GBD,
++	SIIHDMI_INFO_FRAME_GENERIC1_ISRC1,
++	SIIHDMI_INFO_FRAME_GENERIC2_ISRC2,
++};
++
++struct __packed info_frame_buffer_header {
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	unsigned info_frame     : 3;
++	unsigned                : 1;
++	unsigned                : 2;
++	unsigned repeat         : 1;
++	unsigned enable         : 1;
++#else
++	unsigned enable         : 1;
++	unsigned repeat         : 1;
++	unsigned                : 2;
++	unsigned                : 1;
++	unsigned info_frame     : 3;
++#endif
++};
++
++struct siihdmi_spd_info_frame {
++	struct info_frame_buffer_header header;
++	struct spd_info_frame           info_frame;
++	u8                              padding[2];
++};
++
++struct siihdmi_audio_info_frame {
++	struct info_frame_buffer_header header;
++	struct audio_info_frame         info_frame;
++};
++
++struct siihdmi_platform_data {
++	/* reset function */
++	void (*reset)(void);
++
++	/* reset pin */
++	unsigned int reset_pin;
++
++	/* HDMI SPD InfoFrame Data */
++	char *vendor;
++	char *description;
++
++	/* framebuffer fixed id */
++	char *framebuffer;
++
++	/* hotplug IRQ */
++	struct resource hotplug;
++
++	/* maximum pixel clock rate */
++	int pixclock;
++};
++
++struct siihdmi_tx {
++	struct i2c_client *client;
++	struct siihdmi_platform_data *platform;
++
++	struct fb_info *info;
++	struct notifier_block nb;
++
++	struct {
++		bool enabled;
++		struct work_struct handler;
++	} hotplug;
++
++	struct {
++		u8 *data;
++		u32 length;
++#if defined(CONFIG_SYSFS)
++		struct bin_attribute attributes;
++#endif
++	} edid;
++
++	struct {
++		bool available;
++#if defined(CONFIG_SYSFS)
++		struct bin_attribute attributes;
++#endif
++	} audio;
++
++	struct {
++		enum {
++			SINK_TYPE_DVI,
++			SINK_TYPE_HDMI,
++		} type;
++
++		enum {
++			SCANNING_EXACT,
++			SCANNING_UNDERSCANNED,
++			SCANNING_OVERSCANNED,
++		} scanning;
++
++		struct fb_videomode preferred_mode;
++		struct fb_videomode current_mode;
++	} sink;
++};
++
++#endif
+diff --git a/include/linux/cea861.h b/include/linux/cea861.h
+new file mode 100644
+index 0000000..7d98931
+--- /dev/null
++++ b/include/linux/cea861.h
+@@ -0,0 +1,443 @@
++/* vim: set noet ts=8 sts=8 sw=8 : */
++/*
++ * Copyright © 2010 Saleem Abdulrasool <compnerd@compnerd.org>.
++ * Copyright © 2010 Genesi USA, Inc. <matt@genesi-usa.com>.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright notice,
++ *    this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright notice,
++ *    this list of conditions and the following disclaimer in the documentation
++ *    and/or other materials provided with the distribution.
++ *
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
++ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++/* Header file for EIA CEA 861-E structures and definitions */
++
++#ifndef LINUX_CEA861_H
++#define LINUX_CEA861_H
++
++#include <linux/edid.h>
++
++
++#if !defined(__LITTLE_ENDIAN_BITFIELD)
++#warning "structures defined and packed for little-endian byte order"
++#endif
++
++
++#define CEA861_NO_DTDS_PRESENT				(0x04)
++
++static const u8 CEA861_OUI_REGISTRATION_ID_HDMI_LSB[] = { 0x03, 0x0C, 0x00 };
++
++
++enum cea861_data_block_type {
++	CEA861_DATA_BLOCK_TYPE_RESERVED0,
++	CEA861_DATA_BLOCK_TYPE_AUDIO,
++	CEA861_DATA_BLOCK_TYPE_VIDEO,
++	CEA861_DATA_BLOCK_TYPE_VENDOR_SPECIFIC,
++	CEA861_DATA_BLOCK_TYPE_SPEAKER_ALLOCATION,
++	CEA861_DATA_BLOCK_TYPE_VESA_DTC,
++	CEA861_DATA_BLOCK_TYPE_RESERVED6,
++	CEA861_DATA_BLOCK_TYPE_EXTENDED,
++};
++
++
++struct __packed cea861_data_block_header {
++	unsigned length : 5;
++	unsigned tag    : 3;
++};
++
++/* if header->tag is not 0x7 this will work without any definition */
++struct __packed cea861_data_block_generic {
++	struct cea861_data_block_header header;
++	u8 data[31];
++};
++
++struct __packed cea861_vendor_specific_data_block {
++	struct cea861_data_block_header header;
++
++	u8 ieee_registration[3];
++	u8 data[28];
++};
++
++#define CEA861_SVD_NATIVE_FLAG				(1 << 7)
++
++struct __packed cea861_video_data_block {
++	struct cea861_data_block_header header;
++
++	/*
++	 * actual length in header, the index stops us from walking out of
++	 * spec but not out of bounds
++	 */
++	u8 svd[31];
++};
++
++struct __packed cea861_timing_block {
++	/* CEA Extension Header */
++	u8       tag;
++	u8       revision;
++	u8       dtd_offset;
++
++	/* Global Declarations */
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	unsigned native_dtds           : 4;
++	unsigned yuv_422_supported     : 1;
++	unsigned yuv_444_supported     : 1;
++	unsigned basic_audio_supported : 1;
++	unsigned underscan_supported   : 1;
++#else
++	unsigned underscan_supported   : 1;
++	unsigned basic_audio_supported : 1;
++	unsigned yuv_444_supported     : 1;
++	unsigned yuv_422_supported     : 1;
++	unsigned native_dtds           : 4;
++#endif
++
++	u8       data[123];
++
++	u8       checksum;
++};
++
++
++/* HDMI Constants and Structures */
++
++#define HDMI_PACKET_TYPE_INFO_FRAME			(0x80)
++#define HDMI_PACKET_CHECKSUM				(0x100)
++
++struct __packed hdmi_vsdb {
++	struct cea861_data_block_header header;
++
++	u8       ieee_registration[3];
++	unsigned port_configuration_b            : 4;
++	unsigned port_configuration_a            : 4;
++	unsigned port_configuration_d            : 4;
++	unsigned port_configuration_c            : 4;
++
++	/* extension fields */
++	unsigned dvi_dual_link                   : 1;
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned yuv_444_supported               : 1;
++	unsigned colour_depth_30_bit             : 1;
++	unsigned colour_depth_36_bit             : 1;
++	unsigned colour_depth_48_bit             : 1;
++	unsigned audio_info_supported            : 1;
++
++	u8       max_tmds_clock;
++
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned                                 : 1;
++	unsigned interlaced_latency_fields       : 1;
++	unsigned latency_fields                  : 1;
++
++	u8       video_latency;
++	u8       audio_latency;
++	u8       interlaced_video_latency;
++	u8       interlaced_audio_latency;
++
++	u8       reserved[];
++};
++
++
++
++
++/* if header->tag == 0x7 then extended_tag is valid so we can cast the header to this,
++ * find the tag and then recast it to the appropriate structure (ugh!)
++ */
++struct __packed cea861_data_block_extended {
++	struct cea861_data_block_header header;
++	u8 extension_tag;
++};
++
++/* we're missing a few.. */
++enum cea861_data_block_extension_type {
++	CEA861_DATA_BLOCK_EXTENSION_VIDEO_CAPABILITY,
++	CEA861_DATA_BLOCK_EXTENSION_COLORIMETRY = 5,
++	CEA861_DATA_BLOCK_EXTENSION_CEA_MISC_AUDIO = 16,
++};
++
++struct __packed cea861_video_capability_block {
++	struct cea861_data_block_extended header;
++	unsigned ce_overunder_behavior	: 2;
++	unsigned it_overunder_behavior	: 2;
++	unsigned pt_overunder_behavior	: 2;
++	unsigned quant_range_rgb	: 1;
++	unsigned quant_range_ycc	: 1;
++};
++
++
++
++/* InfoFrame type constants */
++enum info_frame_type {
++	INFO_FRAME_TYPE_RESERVED,
++	INFO_FRAME_TYPE_VENDOR_SPECIFIC,
++	INFO_FRAME_TYPE_AUXILIARY_VIDEO_INFO,
++	INFO_FRAME_TYPE_SOURCE_PRODUCT_DESCRIPTION,
++	INFO_FRAME_TYPE_AUDIO,
++	INFO_FRAME_TYPE_MPEG,
++};
++
++/* Common InfoFrame header information */
++struct __packed info_frame_header {
++	u8 type;
++	u8 version;
++	u8 length;
++	u8 chksum;
++};
++
++/* AVI InfoFrame (v2) */
++#define CEA861_AVI_INFO_FRAME_VERSION			(0x02)
++
++enum scan_information {
++	SCAN_INFORMATION_UNKNOWN,
++	SCAN_INFORMATION_OVERSCANNED,
++	SCAN_INFORMATION_UNDERSCANNED,
++	SCAN_INFORMATION_RESERVED,
++};
++
++enum bar_info {
++	BAR_INFO_INVALID,
++	BAR_INFO_VERTICAL,
++	BAR_INFO_HORIZONTAL,
++	BAR_INFO_BOTH,
++};
++
++enum pixel_format {
++	PIXEL_FORMAT_RGB,       /* default */
++	PIXEL_FORMAT_YUV_422,
++	PIXEL_FORMAT_YUV_444,
++};
++
++enum active_format_description {
++	ACTIVE_FORMAT_DESCRIPTION_UNSCALED      = 0x08,
++	ACTIVE_FORMAT_DESCRIPTION_4_3_CENTERED  = 0x09,
++	ACTIVE_FORMAT_DESCRIPTION_16_9_CENTERED = 0x10,
++	ACTIVE_FORMAT_DESCRIPTION_14_9_CENTERED = 0x11,
++};
++
++enum picture_aspect_ratio {
++	PICTURE_ASPECT_RATIO_UNSCALED,
++	PICTURE_ASPECT_RATIO_4_3,
++	PICTURE_ASPECT_RATIO_16_9,
++};
++
++enum colorimetry {
++	COLORIMETRY_UNKNOWN,
++	COLORIMETRY_BT601,
++	COLORIMETRY_BT709,
++	COLORIMETRY_EXTENDED,
++};
++
++enum non_uniform_picture_scaling {
++	NON_UNIFORM_PICTURE_SCALING_NONE,
++	NON_UNIFORM_PICTURE_SCALING_HORIZONTAL,
++	NON_UNIFORM_PICTURE_SCALING_VERTICAL,
++	NON_UNIFORM_PICTURE_SCALING_BOTH,
++};
++
++/* quantization range are the same flag values for RGB and YCC */
++enum quantization_range {
++	QUANTIZATION_RANGE_LIMITED,
++	QUANTIZATION_RANGE_FULL,
++};
++
++enum extended_colorimetry {
++	EXTENDED_COLORIMETRY_BT601,
++	EXTENDED_COLORIMETRY_BT709,
++};
++
++enum video_format {
++	VIDEO_FORMAT_UNKNOWN,
++};
++
++struct __packed avi_info_frame {
++	struct info_frame_header header;
++
++	unsigned scan_information            : 2;
++	unsigned bar_info                    : 2;
++	unsigned active_format_info_valid    : 1;
++	unsigned pixel_format                : 2;
++	unsigned dbyte1_reserved0            : 1;
++
++	unsigned active_format_description   : 4;
++	unsigned picture_aspect_ratio        : 2;
++	unsigned colorimetry                 : 2;
++
++	unsigned non_uniform_picture_scaling : 2;
++	unsigned rgb_quantization_range      : 2;
++	unsigned extended_colorimetry        : 3;
++	unsigned it_content_present          : 1;
++
++	unsigned video_format                : 7;
++	unsigned dbyte4_reserved0            : 1;
++
++	unsigned pixel_repetition_factor     : 4;       /* value - 1 */
++	unsigned content_type                : 2;
++	unsigned ycc_quantizaton_range       : 2;
++
++	u16      end_of_top_bar;
++	u16      start_of_bottom_bar;
++	u16      end_of_left_bar;
++	u16      start_of_right_bar;
++};
++
++
++/* SPD InfoFrame */
++#define CEA861_SPD_INFO_FRAME_VERSION			(0x01)
++
++enum spd_source_information {
++	SPD_SOURCE_UNKNOWN,
++	SPD_SOURCE_DIGITAL_STB,
++	SPD_SOURCE_DVD_PLAYER,
++	SPD_SOURCE_D_VHS,
++	SPD_SOURCE_HDD_VIDEORECORDER,
++	SPD_SOURCE_DVC,
++	SPD_SOURCE_DSC,
++	SPD_SOURCE_VIDEOCD,
++	SPD_SOURCE_GAME,
++	SPD_SOURCE_PC_GENERAL,
++	SPD_SOURCE_BLURAY_SACD,
++	SPD_SOURCE_HD_DVD,
++	SPD_SOURCE_PMP,
++};
++
++struct __packed spd_info_frame {
++	struct info_frame_header header;
++
++	u8     vendor[8];
++	u8     description[16];
++	u8     source_device_info;
++};
++
++
++/* Audio InfoFrame */
++#define CEA861_AUDIO_INFO_FRAME_VERSION			(0x01)
++
++enum audio_coding_type {
++	CODING_TYPE_REFER_STREAM_HEADER,
++	CODING_TYPE_PCM,
++	CODING_TYPE_AC3,
++	CODING_TYPE_MPEG1_LAYER12,
++	CODING_TYPE_MP3,
++	CODING_TYPE_MPEG2,
++	CODING_TYPE_AAC_LC,
++	CODING_TYPE_DTS,
++	CODING_TYPE_ATRAC,
++	CODING_TYPE_DSD,
++	CODING_TYPE_E_AC3,
++	CODING_TYPE_DTS_HD,
++	CODING_TYPE_MLP,
++	CODING_TYPE_DST,
++	CODING_TYPE_WMA_PRO,
++	CODING_TYPE_EXTENDED,
++};
++
++enum audio_sample_frequency {
++	FREQUENCY_REFER_STREAM_HEADER,
++	FREQUENCY_32_KHZ,
++	FREQUENCY_44_1_KHZ,
++	FREQUENCY_CD = FREQUENCY_44_1_KHZ,
++	FREQUENCY_48_KHZ,
++	FREQUENCY_88_2_KHZ,
++	FREQUENCY_96_KHZ,
++	FREQUENCY_176_4_KHZ,
++	FREQUENCY_192_KHZ,
++};
++
++enum audio_sample_size {
++	SAMPLE_SIZE_REFER_STREAM_HEADER,
++	SAMPLE_SIZE_16_BIT,
++	SAMPLE_SIZE_20_BIT,
++	SAMPLE_SIZE_24_BIT,
++};
++
++enum audio_coding_extended_type {
++	CODING_TYPE_HE_AAC = 1,
++	CODING_TYPE_HE_AACv2,
++	CODING_TYPE_MPEG_SURROUND,
++};
++
++/* TODO define speaker allocation bits */
++
++#define CHANNEL_COUNT_REFER_STREAM_HEADER		(0x00)
++#define CHANNEL_ALLOCATION_STEREO			(0x00)
++
++enum audio_downmix {
++	DOWNMIX_PERMITTED,
++	DOWNMIX_PROHIBITED,
++};
++
++enum audio_lfe_level {
++	LFE_LEVEL_UNKNOWN,
++	LFE_LEVEL_0dB,
++	LFE_LEVEL_PLUS10dB,
++	LFE_LEVEL_RESERVED,
++};
++
++struct __packed audio_info_frame {
++	struct info_frame_header header;
++
++	unsigned channel_count          : 3;
++	unsigned future13               : 1;
++	unsigned coding_type            : 4;
++
++	unsigned sample_size            : 2;
++	unsigned sample_frequency       : 3;
++	unsigned future25               : 1;
++	unsigned future26               : 1;
++	unsigned future27               : 1;
++
++	unsigned format_code_extension  : 5;
++	unsigned future35               : 1;
++	unsigned future36               : 1;
++	unsigned future37               : 1;
++
++	u8       channel_allocation;
++
++	unsigned lfe_playback_level     : 2;
++	unsigned future52               : 1;
++	unsigned level_shift            : 4; /* 0-15dB */
++	unsigned down_mix_inhibit       : 1;
++
++	u8       future_byte_6_10[5];
++};
++
++static inline void cea861_checksum_hdmi_info_frame(u8 * const info_frame)
++{
++	struct info_frame_header * const header =
++		(struct info_frame_header *) info_frame;
++
++	int i;
++	u8 crc;
++
++	crc = (HDMI_PACKET_TYPE_INFO_FRAME + header->type) +
++		header->version + (header->length - 1);
++
++	for (i = 1; i < header->length; i++)
++		crc += info_frame[i];
++
++	header->chksum = HDMI_PACKET_CHECKSUM - crc;
++}
++
++#endif /* LINUX_CEA861_H */
+diff --git a/include/linux/edid.h b/include/linux/edid.h
+new file mode 100644
+index 0000000..55457e0
+--- /dev/null
++++ b/include/linux/edid.h
+@@ -0,0 +1,372 @@
++/* vim: set noet ts=8 sts=8 sw=8 : */
++/*
++ * Copyright © 2010 Saleem Abdulrasool <compnerd@compnerd.org>.
++ * Copyright © 2010 Genesi USA, Inc. <matt@genesi-usa.com>.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright notice,
++ *    this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright notice,
++ *    this list of conditions and the following disclaimer in the documentation
++ *    and/or other materials provided with the distribution.
++ *
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
++ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef LINUX_EDID_H
++#define LINUX_EDID_H
++
++/* EDID constants and Structures */
++#define EDID_I2C_DDC_DATA_ADDRESS			(0x50)
++
++#define EDID_BLOCK_SIZE					(0x80)
++#define EDID_MAX_EXTENSIONS				(0xfe)
++
++
++static const u8 EDID_HEADER[] = { 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00 };
++
++
++enum edid_extension_type {
++	EDID_EXTENSION_TIMING           = 0x01, // Timing Extension
++	EDID_EXTENSION_CEA              = 0x02, // Additional Timing Block Data (CEA EDID Timing Extension)
++	EDID_EXTENSION_VTB              = 0x10, // Video Timing Block Extension (VTB-EXT)
++	EDID_EXTENSION_EDID_2_0         = 0x20, // EDID 2.0 Extension
++	EDID_EXTENSION_DI               = 0x40, // Display Information Extension (DI-EXT)
++	EDID_EXTENSION_LS               = 0x50, // Localised String Extension (LS-EXT)
++	EDID_EXTENSION_MI               = 0x60, // Microdisplay Interface Extension (MI-EXT)
++	EDID_EXTENSION_DTCDB_1          = 0xa7, // Display Transfer Characteristics Data Block (DTCDB)
++	EDID_EXTENSION_DTCDB_2          = 0xaf,
++	EDID_EXTENSION_DTCDB_3          = 0xbf,
++	EDID_EXTENSION_BLOCK_MAP        = 0xf0, // Block Map
++	EDID_EXTENSION_DDDB             = 0xff, // Display Device Data Block (DDDB)
++};
++
++enum edid_display_type {
++	EDID_DISPLAY_TYPE_MONOCHROME,
++	EDID_DISPLAY_TYPE_RGB,
++	EDID_DISPLAY_TYPE_NON_RGB,
++	EDID_DISPLAY_TYPE_UNDEFINED,
++};
++
++enum edid_aspect_ratio {
++	EDID_ASPECT_RATIO_16_10,
++	EDID_ASPECT_RATIO_4_3,
++	EDID_ASPECT_RATIO_5_4,
++	EDID_ASPECT_RATIO_16_9,
++};
++
++enum edid_monitor_descriptor_type {
++	EDID_MONITOR_DESCRIPTOR_STANDARD_TIMING_IDENTIFIERS = 0xfa,
++	EDID_MONITOR_DESCRIPTOR_COLOR_POINT                 = 0xfb,
++	EDID_MONITOR_DESCRIPTOR_MONITOR_NAME                = 0xfc,
++	EDID_MONITOR_DESCRIPTOR_MONITOR_RANGE_LIMITS        = 0xfd,
++	EDID_MONITOR_DESCRIPTOR_MONITOR_SERIAL_NUMBER       = 0xff,
++};
++
++
++struct __packed edid_detailed_timing_descriptor {
++	u16      pixel_clock;                   /* = value * 10000 */
++
++	u8       horizontal_active_lo;
++	u8       horizontal_blanking_lo;
++
++	unsigned horizontal_blanking_hi         : 4;
++	unsigned horizontal_active_hi           : 4;
++
++	u8       vertical_active_lo;
++	u8       vertical_blanking_lo;
++
++	unsigned vertical_blanking_hi           : 4;
++	unsigned vertical_active_hi             : 4;
++
++	u8       horizontal_sync_offset_lo;
++	u8       horizontal_sync_pulse_width_lo;
++
++	unsigned vertical_sync_pulse_width_lo   : 4;
++	unsigned vertical_sync_offset_lo        : 4;
++
++	unsigned vertical_sync_pulse_width_hi   : 2;
++	unsigned vertical_sync_offset_hi        : 2;
++	unsigned horizontal_sync_pulse_width_hi : 2;
++	unsigned horizontal_sync_offset_hi      : 2;
++
++	u8       horizontal_image_size_lo;
++	u8       vertical_image_size_lo;
++
++	unsigned vertical_image_size_hi         : 4;
++	unsigned horizontal_image_size_hi       : 4;
++
++	u8       horizontal_border;
++	u8       vertical_border;
++
++	u8       flags;
++};
++
++
++static inline u16
++edid_timing_pixel_clock(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return dtb->pixel_clock * 10000;
++}
++
++static inline u16
++edid_timing_horizontal_blanking(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->horizontal_blanking_hi << 8) | dtb->horizontal_blanking_lo;
++}
++
++static inline u16
++edid_timing_horizontal_active(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->horizontal_active_hi << 8) | dtb->horizontal_active_lo;
++}
++
++static inline u16
++edid_timing_vertical_blanking(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->vertical_blanking_hi << 8) | dtb->vertical_blanking_lo;
++}
++
++static inline u16
++edid_timing_vertical_active(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->vertical_active_hi << 8) | dtb->vertical_active_lo;
++}
++
++static inline u8
++edid_timing_vertical_sync_offset(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->vertical_sync_offset_hi << 4) | dtb->vertical_sync_offset_lo;
++}
++
++static inline u8
++edid_timing_vertical_sync_pulse_width(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->vertical_sync_pulse_width_hi << 4) | dtb->vertical_sync_pulse_width_lo;
++}
++
++static inline u8
++edid_timing_horizontal_sync_offset(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->horizontal_sync_offset_hi << 4) | dtb->horizontal_sync_offset_lo;
++}
++
++static inline u8
++edid_timing_horizontal_sync_pulse_width(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->horizontal_sync_pulse_width_hi << 4) | dtb->horizontal_sync_pulse_width_lo;
++}
++
++static inline u16
++edid_timing_horizontal_image_size(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->horizontal_image_size_hi << 8) | dtb->horizontal_image_size_lo;
++}
++
++static inline u16
++edid_timing_vertical_image_size(const struct edid_detailed_timing_descriptor * const dtb)
++{
++	return (dtb->vertical_image_size_hi << 8) | dtb->vertical_image_size_lo;
++}
++
++
++struct __packed edid_monitor_descriptor {
++	u16 flag0;
++	u8  flag1;
++	u8  tag;
++	u8  flag2;
++	u8  data[13];
++};
++
++struct __packed edid_standard_timing_descriptor {
++	u8       horizontal_active_pixels;    /* = (value + 31) * 8 */
++
++	unsigned refresh_rate       : 6;      /* = value + 60 */
++	unsigned image_aspect_ratio : 2;
++};
++
++struct __packed edid_block0 {
++	/* header information */
++	u8 header[8];
++
++	/* vendor/product identification */
++	struct __packed {
++		unsigned id2  : 5;
++		unsigned id1  : 5;
++		unsigned id0  : 5;
++		unsigned zero : 1;
++	} manufacturer;
++
++	u8 product[2];
++	u8 serial_number[4];
++	u8 manufacture_week;
++	u8 manufacture_year;
++
++	/* EDID version */
++	u8 version;
++	u8 revision;
++
++	/* basic display parameters and features */
++	struct __packed {
++		unsigned dfp_1x_vsync_serration : 1; /* VESA DFP 1.x */
++		unsigned green_video_sync       : 1;
++		unsigned composite_sync         : 1;
++		unsigned separate_sync          : 1;
++		unsigned blank_to_black_setup   : 1;
++		unsigned signal_level_standard  : 2;
++		unsigned digital                : 1;
++	} video_input_definition;
++
++	u8 maximum_horizontal_image_size;       /* cm */
++	u8 maximum_vertical_image_size;         /* cm */
++
++	u8 display_transfer_characteristics;    /* gamma = (value + 100) / 100 */
++
++	struct __packed {
++		unsigned default_gtf                    : 1; /* generalised timing formula */
++		unsigned preferred_timing_mode          : 1;
++		unsigned standard_default_color_space   : 1;
++		unsigned display_type                   : 2;
++		unsigned active_off                     : 1;
++		unsigned suspend                        : 1;
++		unsigned standby                        : 1;
++	} feature_support;
++
++	/* color characteristics block */
++	unsigned green_y_low    : 2;
++	unsigned green_x_low    : 2;
++	unsigned red_y_low      : 2;
++	unsigned red_x_low      : 2;
++
++	unsigned white_y_low    : 2;
++	unsigned white_x_low    : 2;
++	unsigned blue_y_low     : 2;
++	unsigned blue_x_low     : 2;
++
++	u8 red_x;
++	u8 red_y;
++	u8 green_x;
++	u8 green_y;
++	u8 blue_x;
++	u8 blue_y;
++	u8 white_x;
++	u8 white_y;
++
++	/* established timings */
++	struct __packed {
++		unsigned timing_800x600_60   : 1;
++		unsigned timing_800x600_56   : 1;
++		unsigned timing_640x480_75   : 1;
++		unsigned timing_640x480_72   : 1;
++		unsigned timing_640x480_67   : 1;
++		unsigned timing_640x480_60   : 1;
++		unsigned timing_720x400_88   : 1;
++		unsigned timing_720x400_70   : 1;
++
++		unsigned timing_1280x1024_75 : 1;
++		unsigned timing_1024x768_75  : 1;
++		unsigned timing_1024x768_70  : 1;
++		unsigned timing_1024x768_60  : 1;
++		unsigned timing_1024x768_87  : 1;
++		unsigned timing_832x624_75   : 1;
++		unsigned timing_800x600_75   : 1;
++		unsigned timing_800x600_72   : 1;
++	} established_timings;
++
++	struct __packed {
++		unsigned reserved            : 7;
++		unsigned timing_1152x870_75  : 1;
++	} manufacturer_timings;
++
++	/* standard timing id */
++	struct edid_standard_timing_descriptor standard_timing_id[8];
++
++	/* detailed timing */
++	union {
++		struct edid_detailed_timing_descriptor detailed_timing[4];
++		struct edid_monitor_descriptor         monitor_descriptor[4];
++	} detailed_timings;
++
++	u8 extensions;
++	u8 checksum;
++};
++
++struct __packed edid_color_characteristics_data {
++	struct {
++		u16 x;
++		u16 y;
++	} red, green, blue, white;
++};
++
++
++static inline u16 edid_gamma(const struct edid_block0 * const block0)
++{
++	return (block0->display_transfer_characteristics + 100) / 100;
++}
++
++static inline struct edid_color_characteristics_data
++edid_color_characteristics(const struct edid_block0 * const block0)
++{
++	struct edid_color_characteristics_data characteristics = {
++		.red = {
++			.x = (block0->red_x << 8) | block0->red_x_low,
++			.y = (block0->red_y << 8) | block0->red_y_low,
++		},
++		.green = {
++			.x = (block0->green_x << 8) | block0->green_x_low,
++			.y = (block0->green_y << 8) | block0->green_y_low,
++		},
++		.blue = {
++			.x = (block0->blue_x << 8) | block0->blue_x_low,
++			.y = (block0->blue_y << 8) | block0->blue_y_low,
++		},
++		.white = {
++			.x = (block0->white_x << 8) | block0->white_x_low,
++			.y = (block0->white_y << 8) | block0->white_y_low,
++		},
++	};
++
++	return characteristics;
++}
++
++struct __packed edid_block_map {
++	u8 tag;
++	u8 extension_tag[126];
++	u8 checksum;
++};
++
++struct __packed edid_extension {
++	u8 tag;
++	u8 revision;
++	u8 extension_data[125];
++	u8 checksum;
++};
++
++static inline bool edid_verify_checksum(const u8 * const block)
++{
++	u8 checksum = 0;
++	int i;
++
++	for (i = 0; i < EDID_BLOCK_SIZE; i++)
++		checksum += block[i];
++
++	return (checksum == 0);
++}
++
++#endif

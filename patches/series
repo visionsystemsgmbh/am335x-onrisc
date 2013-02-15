@@ -1,0 +1,4 @@
+# This series applies on GIT commit 0e6a805aac5bb916350190b0e853e620c315edd5
+01-basic-bsp.patch
+02-sii9022-support.patch
+03-rtc-support.patch
