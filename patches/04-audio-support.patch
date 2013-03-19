@@ -1,0 +1,547 @@
+Add audio support
+
+From: Yegor Yefremov <yegorslists@googlemail.com>
+
+
+---
+
+ arch/arm/mach-omap2/board-am335xevm.c |   84 +++++++++++++++++++++++++++++++++
+ arch/arm/mach-omap2/devices.c         |    5 ++
+ drivers/video/display/siihdmi.c       |   63 ++++++++++++++++++++-----
+ sound/soc/codecs/Kconfig              |    3 +
+ sound/soc/codecs/Makefile             |    2 +
+ sound/soc/davinci/Kconfig             |   18 +++++++
+ sound/soc/davinci/davinci-evm.c       |   31 ++++++++++--
+ sound/soc/davinci/davinci-mcasp.c     |   57 +++++++++++++++-------
+ 8 files changed, 226 insertions(+), 37 deletions(-)
+
+
+diff --git a/arch/arm/mach-omap2/board-am335xevm.c b/arch/arm/mach-omap2/board-am335xevm.c
+index 8efac9d..e981c6e 100644
+--- a/arch/arm/mach-omap2/board-am335xevm.c
++++ b/arch/arm/mach-omap2/board-am335xevm.c
+@@ -209,6 +209,43 @@ static struct snd_platform_data am335x_evm_sk_snd_data1 = {
+ 	.txnumevt	= 32,
+ };
+ 
++static u8 am335x_evm_alekto2_spdif_serializer_direction1[] = {
++	INACTIVE_MODE,	TX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++};
++
++static struct snd_platform_data am335x_evm_alekto2_snd_spdif_data1 = {
++	.tx_dma_offset	= 0x46400000,	/* McASP1 */
++	/*.rx_dma_offset	= 0x46400000,*/
++	.op_mode	= DAVINCI_MCASP_DIT_MODE,
++	.num_serializer	= ARRAY_SIZE(am335x_evm_alekto2_spdif_serializer_direction1),
++	.tdm_slots	= 2,
++	.serial_dir	= am335x_evm_alekto2_spdif_serializer_direction1,
++	.asp_chan_q	= EVENTQ_2,
++	.version	= MCASP_VERSION_3,
++	.txnumevt	= 32,
++};
++
++static u8 am335x_evm_alekto2_iis_serializer_direction1[] = {
++	TX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++};
++
++static struct snd_platform_data am335x_evm_alekto2_snd_data1 = {
++	.tx_dma_offset	= 0x46400000,	/* McASP1 */
++	/*.rx_dma_offset	= 0x46400000,*/
++	.op_mode	= DAVINCI_MCASP_IIS_MODE,
++	.num_serializer	= ARRAY_SIZE(am335x_evm_alekto2_iis_serializer_direction1),
++	.tdm_slots	= 2,
++	.serial_dir	= am335x_evm_alekto2_iis_serializer_direction1,
++	.asp_chan_q	= EVENTQ_2,
++	.version	= MCASP_VERSION_3,
++	.txnumevt	= 1,
++};
+ static struct omap2_hsmmc_info am335x_mmc[] __initdata = {
+ 	{
+ 		.mmc            = 1,
+@@ -624,6 +661,21 @@ static struct pinmux_config mcasp1_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++/* Module pin mux for mcasp1 Alekto2 */
++static struct pinmux_config mcasp1_pin_mux_alekto2[] = {
++	{"mcasp0_aclkr.mcasp1_aclkx", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_fsr.mcasp1_fsx", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_axr1.mcasp1_axr0", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_ahclkx.mcasp1_axr1", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLDOWN},
++	{NULL, 0},
++};
++/*static struct pinmux_config mcasp1_pin_mux_alekto2[] = {
++	{"mcasp0_aclkr.mcasp1_aclkx", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_fsr.mcasp1_fsx", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_axr1.mcasp1_axr0", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
++	{NULL, 0},
++};*/
+ 
+ /* Module pin mux for mmc0 */
+ static struct pinmux_config mmc0_common_pin_mux[] = {
+@@ -1695,6 +1747,19 @@ static void mcasp1_init(int evm_id, int profile)
+ 	return;
+ }
+ 
++/* Setup McASP 1 Alekto2 */
++static void mcasp1_init_alekto2(int evm_id, int profile)
++{
++	/* Configure McASP */
++	setup_pin_mux(mcasp1_pin_mux_alekto2);
++#if defined(CONFIG_SOC_OMAPAM33XX_I2S)	
++	am335x_register_mcasp(&am335x_evm_alekto2_snd_data1, 1);
++#else
++	am335x_register_mcasp(&am335x_evm_alekto2_snd_spdif_data1, 1);
++#endif
++	return;
++}
++
+ static void mmc1_init(int evm_id, int profile)
+ {
+ 	setup_pin_mux(mmc1_common_pin_mux);
+@@ -2298,6 +2363,7 @@ static struct evm_dev_cfg alekto2_dev_cfg[] = {
+ 	{uart3_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{uart5_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{d_can_init_alekto2,	DEV_ON_BASEBOARD, PROFILE_NONE},
++	{mcasp1_init_alekto2,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{lbs_init,       DEV_ON_BASEBOARD, PROFILE_ALL},
+ 	{lcdc_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+ 	{NULL, 0, 0},
+@@ -2608,12 +2674,28 @@ static struct regulator_init_data am335x_vdd2 = {
+ 	.consumer_supplies	= am335x_vdd2_supply,
+ };
+ 
++static struct regulator_consumer_supply am335x_vdd3_supply[] = {
++	REGULATOR_SUPPLY("vdd_boost", NULL),
++};
++
++static struct regulator_init_data am335x_vdd3 = {
++	.constraints = {
++		.min_uV = 5000000,
++		.max_uV = 5000000,
++		.valid_modes_mask	= REGULATOR_MODE_NORMAL,
++		.valid_ops_mask		= REGULATOR_CHANGE_VOLTAGE,
++		.always_on		= 1,
++	},
++	.num_consumer_supplies	= ARRAY_SIZE(am335x_vdd3_supply),
++	.consumer_supplies	= am335x_vdd3_supply,
++};
++
+ static struct tps65910_board am335x_tps65910_info = {
+ 	.tps65910_pmic_init_data[TPS65910_REG_VRTC]	= &am335x_dummy,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VIO]	= &am335x_dummy,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VDD1]	= &am335x_vdd1,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VDD2]	= &am335x_vdd2,
+-	.tps65910_pmic_init_data[TPS65910_REG_VDD3]	= &am335x_dummy,
++	.tps65910_pmic_init_data[TPS65910_REG_VDD3]	= &am335x_vdd3,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VDIG1]	= &am335x_dummy,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VDIG2]	= &am335x_dummy,
+ 	.tps65910_pmic_init_data[TPS65910_REG_VPLL]	= &am335x_dummy,
+diff --git a/arch/arm/mach-omap2/devices.c b/arch/arm/mach-omap2/devices.c
+index b930698..abe088d 100644
+--- a/arch/arm/mach-omap2/devices.c
++++ b/arch/arm/mach-omap2/devices.c
+@@ -235,9 +235,14 @@ struct platform_device am33xx_pcm_device = {
+ 	.id		= -1,
+ };
+ 
++struct platform_device siihdmi_device = {
++	.name		= "sii9022a-audio",
++	.id		= -1,
++};
+ static void am33xx_init_pcm(void)
+ {
+ 	platform_device_register(&am33xx_pcm_device);
++	platform_device_register(&siihdmi_device);
+ }
+ 
+ #else
+diff --git a/drivers/video/display/siihdmi.c b/drivers/video/display/siihdmi.c
+index 6cc728a..88eb183 100644
+--- a/drivers/video/display/siihdmi.c
++++ b/drivers/video/display/siihdmi.c
+@@ -747,14 +747,45 @@ static inline void siihdmi_configure_audio(struct siihdmi_tx *tx)
+ {
+ 	siihdmi_audio_mute(tx);
+ 
+-	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL, SIIHDMI_AUDIO_I2S_ENABLE |
+-			SIIHDMI_AUDIO_MUTE);
+-	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_AUDIO_SAMPLING_HBR, SIIHDMI_AUDIO_SAMPLING_DEPTH_16_BIT |
+-			SIIHDMI_AUDIO_SAMPLING_FREQUENCY_96_KHZ);
+-	i2c_smbus_write_byte_data(tx->client, SIIHDMI_TPI_REG_I2S_ORIGINAL_FREQ_SAMPLE_LENGTH, SIIHDMI_AUDIO_HANDLING_DOWN_SAMPLE);
+ 
++#if defined(CONFIG_SOC_OMAPAM33XX_I2S)	
++	i2c_smbus_write_byte_data(tx->client,
++			SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL,
++			SIIHDMI_AUDIO_I2S_ENABLE | SIIHDMI_AUDIO_MUTE);
++
++	/* reg 0x20 */
++	i2c_smbus_write_byte_data(tx->client, 
++			SIIHDMI_TPI_REG_I2S_INPUT_CONFIGURATION,
++			SIIHDMI_I2S_SCK_SAMPLE_RISING_EDGE |
++//			SIIHDMI_I2S_WS_POLARITY_HIGH |
++			SIIHDMI_I2S_SD_LSB_FIRST |
++			//SIIHDMI_I2S_SD_RIGHT_JUSTIFY_DATA |
++			SIIHDMI_I2S_WS_TO_SD_FIRST_BIT_SHIFT);
++
++	/* reg 0x1f */
++	i2c_smbus_write_byte_data(tx->client, 
++			SIIHDMI_TPI_REG_I2S_ENABLE_MAPPING,
++			SIIHDMI_I2S_MAPPING_SELECT_SD_CHANNEL_0 |
++			SIIHDMI_I2S_MAPPING_SELECT_FIFO_0 |
++			SIIHDMI_I2S_ENABLE_SELECTED_FIFO);
++
++	/* reg 0x27 */
++	i2c_smbus_write_byte_data(tx->client,
++			SIIHDMI_TPI_REG_I2S_AUDIO_SAMPLING_HBR,
++			SIIHDMI_AUDIO_SAMPLING_DEPTH_16_BIT |
++			SIIHDMI_AUDIO_SAMPLING_FREQUENCY_48_KHZ);
++	/* reg 0x25 */
++	i2c_smbus_write_byte_data(tx->client,
++			SIIHDMI_TPI_REG_I2S_ORIGINAL_FREQ_SAMPLE_LENGTH,
++			SIIHDMI_AUDIO_HANDLING_DOWN_SAMPLE);
++#else
++	i2c_smbus_write_byte_data(tx->client,
++			SIIHDMI_TPI_REG_I2S_AUDIO_PACKET_LAYOUT_CTRL,
++			SIIHDMI_AUDIO_SPDIF_ENABLE | SIIHDMI_AUDIO_MUTE);
++
++#endif
+ 	siihdmi_audio_unmute(tx);
+-	siihdmi_set_audio_info_frame(tx);
++	//siihdmi_set_audio_info_frame(tx);
+ }
+ 
+ static void siihdmi_print_modeline(const struct siihdmi_tx *tx,
+@@ -1154,7 +1185,7 @@ static int siihdmi_setup_display(struct siihdmi_tx *tx)
+ 	tx->sink.scanning   = SCANNING_EXACT;
+ 	tx->sink.type       = SINK_TYPE_HDMI;
+ 	//tx->sink.type       = SINK_TYPE_DVI;
+-	tx->audio.available = false;
++	tx->audio.available = true;
+ 
+ 	isr = i2c_smbus_read_byte_data(tx->client, SIIHDMI_TPI_REG_ISR);
+ 	printk("hotplug: display %s, powered %s\n",
+@@ -1185,6 +1216,11 @@ static int siihdmi_setup_display(struct siihdmi_tx *tx)
+ 		ERROR("unable to find video framebuffer\n");
+ 		return -1;
+ 	}
++#if 0
++	/* enable audio */
++	printk("YY: configuring audio\n");
++	siihdmi_configure_audio(tx);
++#endif
+ 
+ #if 1
+ 	/* use EDID to detect sink characteristics */
+@@ -1219,13 +1255,16 @@ static int siihdmi_setup_display(struct siihdmi_tx *tx)
+ 	siihdmi_dump_modelines(tx);
+ #endif
+ 	mode = siihdmi_select_video_mode(tx);
+-	//if ((ret = siihdmi_set_resolution(tx, mode)) < 0)
+-	//	return ret;
++#if 1
++	if ((ret = siihdmi_set_resolution(tx, mode)) < 0)
++		return ret;
++#endif
+ 
+ 	/* activate the framebuffer */
+ 	fb_videomode_to_var(&var, mode);
+ 	var.activate = FB_ACTIVATE_ALL;
+ 
++
+ 	console_lock();
+ 	tx->info->flags |= FBINFO_MISC_USEREVENT;
+ 	fb_set_var(tx->info, &var);
+@@ -1275,8 +1314,10 @@ static int siihdmi_fb_event_handler(struct notifier_block *nb,
+ 
+ 	case FB_EVENT_MODE_CHANGE:
+ 		mode = event->data;
+-		//if (event->info->mode)
+-			//return siihdmi_set_resolution(tx, mode);
++#if 1
++		if (event->info->mode)
++			return siihdmi_set_resolution(tx, mode);
++#endif
+ 	case FB_EVENT_MODE_CHANGE_ALL:
+ 		/* is handled above, removes a "unhandled event" warning in dmesg */
+ 		break;
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index fa787d4..4c4e0e6 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -25,6 +25,7 @@ config SND_SOC_ALL_CODECS
+ 	select SND_SOC_AK4641 if I2C
+ 	select SND_SOC_AK4642 if I2C
+ 	select SND_SOC_AK4671 if I2C
++	select SND_SOC_SIIHDMI if I2C
+ 	select SND_SOC_ALC5623 if I2C
+ 	select SND_SOC_CQ0093VC if MFD_DAVINCI_VOICECODEC
+ 	select SND_SOC_CS42L51 if I2C
+@@ -404,6 +405,8 @@ config SND_SOC_WM9712
+ config SND_SOC_WM9713
+ 	tristate
+ 
++config SND_SOC_SIIHDMI
++	tristate
+ # Amp
+ config SND_SOC_LM4857
+ 	tristate
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index a2c7842..fb80749 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -89,6 +89,7 @@ snd-soc-wm9712-objs := wm9712.o
+ snd-soc-wm9713-objs := wm9713.o
+ snd-soc-wm-hubs-objs := wm_hubs.o
+ snd-soc-jz4740-codec-objs := jz4740.o
++snd-soc-syno-sii9022a-hdmi-audio-objs := syno_sii9022a_hdmi_audio.o
+ 
+ # Amp
+ snd-soc-lm4857-objs := lm4857.o
+@@ -188,6 +189,7 @@ obj-$(CONFIG_SND_SOC_WM9705)	+= snd-soc-wm9705.o
+ obj-$(CONFIG_SND_SOC_WM9712)	+= snd-soc-wm9712.o
+ obj-$(CONFIG_SND_SOC_WM9713)	+= snd-soc-wm9713.o
+ obj-$(CONFIG_SND_SOC_WM_HUBS)	+= snd-soc-wm-hubs.o
++obj-$(CONFIG_SND_SOC_SIIHDMI) += snd-soc-syno-sii9022a-hdmi-audio.o
+ 
+ # Amp
+ obj-$(CONFIG_SND_SOC_LM4857)	+= snd-soc-lm4857.o
+diff --git a/sound/soc/davinci/Kconfig b/sound/soc/davinci/Kconfig
+index 6b8dc37..61f9af5 100644
+--- a/sound/soc/davinci/Kconfig
++++ b/sound/soc/davinci/Kconfig
+@@ -14,6 +14,24 @@ config SND_AM33XX_SOC
+ 	  the AM33XX I2S interface. You will also need to select the
+ 	  audio interfaces to support below.
+ 
++choice
++	bool "Audio type"
++	default SOC_OMAPAM33XX_I2S
++	help
++	  I2S or S/PDIF
++
++config SOC_OMAPAM33XX_I2S
++	bool "i2s"
++	help
++		Use I2S
++
++config SOC_OMAPAM33XX_SPDIF
++	bool "spdif"
++	help
++	  Use S/PDIF
++
++endchoice # audio type
++
+ config SND_DAVINCI_SOC_I2S
+ 	tristate
+ 
+diff --git a/sound/soc/davinci/davinci-evm.c b/sound/soc/davinci/davinci-evm.c
+index fe1563c..0f988c9 100644
+--- a/sound/soc/davinci/davinci-evm.c
++++ b/sound/soc/davinci/davinci-evm.c
+@@ -34,6 +34,11 @@
+ 
+ #define AUDIO_FORMAT (SND_SOC_DAIFMT_DSP_B | \
+ 		SND_SOC_DAIFMT_CBM_CFM | SND_SOC_DAIFMT_IB_NF)
++
++#define AUDIO_FORMAT_ALEKTO2 (SND_SOC_DAIFMT_I2S | \
++		SND_SOC_DAIFMT_CBS_CFS | SND_SOC_DAIFMT_IB_NF)
++
++#define AUDIO_FORMAT_ALEKTO2_SPDIF (SND_SOC_DAIFMT_CBS_CFS | SND_SOC_DAIFMT_IB_NF)
+ static int evm_hw_params(struct snd_pcm_substream *substream,
+ 			 struct snd_pcm_hw_params *params)
+ {
+@@ -71,12 +76,12 @@ static int evm_hw_params(struct snd_pcm_substream *substream,
+ 		return -EINVAL;
+ 
+ 	/* set codec DAI configuration */
+-	ret = snd_soc_dai_set_fmt(codec_dai, AUDIO_FORMAT);
++	ret = snd_soc_dai_set_fmt(codec_dai, AUDIO_FORMAT_ALEKTO2);
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	/* set cpu DAI configuration */
+-	ret = snd_soc_dai_set_fmt(cpu_dai, AUDIO_FORMAT);
++	ret = snd_soc_dai_set_fmt(cpu_dai, AUDIO_FORMAT_ALEKTO2);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -271,6 +276,21 @@ static struct snd_soc_dai_link am335x_evm_sk_dai = {
+ 	.ops = &evm_ops,
+ };
+ 
++static struct snd_soc_dai_link alekto2_dai = {
++	.name = "SII9022AAUDIO",
++	.stream_name = "hdmi-sii9022a",
++	.cpu_dai_name= "davinci-mcasp.1",
++	.platform_name = "davinci-pcm-audio",
++	.codec_dai_name = "sii9022a", /* DAI name */
++	.codec_name = "sii9022a-audio",
++
++#if defined(CONFIG_SOC_OMAPAM33XX_I2S)	
++	.ops = &evm_ops,
++#else
++	.ops = &evm_spdif_ops,
++#endif
++};
++
+ /* davinci dm6446 evm audio machine driver */
+ static struct snd_soc_card dm6446_snd_soc_card_evm = {
+ 	.name = "DaVinci DM6446 EVM",
+@@ -313,13 +333,15 @@ static struct snd_soc_card da850_snd_soc_card = {
+ 
+ static struct snd_soc_card am335x_snd_soc_card = {
+ 	.name = "AM335X EVM",
+-	.dai_link = &am335x_evm_dai,
++	.dai_link = &alekto2_dai,
++	//.dai_link = &am335x_evm_dai,
+ 	.num_links = 1,
+ };
+ 
+ static struct snd_soc_card am335x_evm_sk_snd_soc_card = {
+ 	.name = "AM335X EVM",
+-	.dai_link = &am335x_evm_sk_dai,
++	//.dai_link = &am335x_evm_sk_dai,
++	.dai_link = &alekto2_dai,
+ 	.num_links = 1,
+ };
+ 
+@@ -367,7 +389,6 @@ static int __init evm_init(void)
+ 	ret = platform_device_add(evm_snd_device);
+ 	if (ret)
+ 		platform_device_put(evm_snd_device);
+-
+ 	return ret;
+ }
+ 
+diff --git a/sound/soc/davinci/davinci-mcasp.c b/sound/soc/davinci/davinci-mcasp.c
+index 0136cc4..7953557 100644
+--- a/sound/soc/davinci/davinci-mcasp.c
++++ b/sound/soc/davinci/davinci-mcasp.c
+@@ -593,16 +593,19 @@ static int davinci_config_channel_size(struct davinci_audio_dev *dev,
+ 		return -EINVAL;
+ 	}
+ 
+-	mcasp_mod_bits(dev->base + DAVINCI_MCASP_RXFMT_REG,
+-					RXSSZ(fmt), RXSSZ(0x0F));
+-	mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG,
+-					TXSSZ(fmt), TXSSZ(0x0F));
+-	mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG, TXROT(rotate),
+-							TXROT(7));
+-	mcasp_mod_bits(dev->base + DAVINCI_MCASP_RXFMT_REG, RXROT(0),
+-							RXROT(7));
++	if (dev->op_mode != DAVINCI_MCASP_DIT_MODE) {
++		mcasp_mod_bits(dev->base + DAVINCI_MCASP_RXFMT_REG,
++						RXSSZ(fmt), RXSSZ(0x0F));
++		mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG,
++						TXSSZ(fmt), TXSSZ(0x0F));
++		mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG, TXROT(rotate),
++								TXROT(7));
++		mcasp_mod_bits(dev->base + DAVINCI_MCASP_RXFMT_REG, RXROT(0),
++								RXROT(7));
++		mcasp_set_reg(dev->base + DAVINCI_MCASP_RXMASK_REG, mask);
++	}
++
+ 	mcasp_set_reg(dev->base + DAVINCI_MCASP_TXMASK_REG, mask);
+-	mcasp_set_reg(dev->base + DAVINCI_MCASP_RXMASK_REG, mask);
+ 
+ 	return 0;
+ }
+@@ -695,7 +698,7 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
+ 		/* bit stream is MSB first  with no delay */
+ 		/* DSP_B mode */
+ 		mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG,
+-				AHCLKXE);
++				AHCLKXE | AHCLKXDIV(7));
+ 		mcasp_set_reg(dev->base + DAVINCI_MCASP_TXTDM_REG, mask);
+ 		mcasp_set_bits(dev->base + DAVINCI_MCASP_TXFMT_REG, TXORD);
+ 
+@@ -706,7 +709,7 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
+ 			printk(KERN_ERR "playback tdm slot %d not supported\n",
+ 				dev->tdm_slots);
+ 
+-		mcasp_clr_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG, FSXDUR);
++		mcasp_set_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG, AFSXE | FSXDUR);
+ 	} else {
+ 		/* bit stream is MSB first with no delay */
+ 		/* DSP_B mode */
+@@ -729,16 +732,10 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
+ /* S/PDIF */
+ static void davinci_hw_dit_param(struct davinci_audio_dev *dev)
+ {
+-	/* Set the PDIR for Serialiser as output */
+-	mcasp_set_bits(dev->base + DAVINCI_MCASP_PDIR_REG, AFSX);
+-
+-	/* TXMASK for 24 bits */
+-	mcasp_set_reg(dev->base + DAVINCI_MCASP_TXMASK_REG, 0x00FFFFFF);
+-
+ 	/* Set the TX format : 24 bit right rotation, 32 bit slot, Pad 0
+ 	   and LSB first */
+ 	mcasp_set_bits(dev->base + DAVINCI_MCASP_TXFMT_REG,
+-						TXROT(6) | TXSSZ(15));
++						TXROT(6) | TXSSZ(0x7));
+ 
+ 	/* Set TX frame synch : DIT Mode, 1 bit width, internal, rising edge */
+ 	mcasp_set_reg(dev->base + DAVINCI_MCASP_TXFMCTL_REG,
+@@ -754,7 +751,7 @@ static void davinci_hw_dit_param(struct davinci_audio_dev *dev)
+ 	mcasp_clr_bits(dev->base + DAVINCI_MCASP_XEVTCTL_REG, TXDATADMADIS);
+ 
+ 	/* Only 44100 and 48000 are valid, both have the same setting */
+-	mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXDIV(3));
++	mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXE | AHCLKXDIV(3));
+ 
+ 	/* Enable the DIT */
+ 	mcasp_set_bits(dev->base + DAVINCI_MCASP_TXDITCTL_REG, DITEN);
+@@ -886,7 +883,7 @@ static struct snd_soc_dai_driver davinci_mcasp_dai[] = {
+ 			.formats	= DAVINCI_MCASP_PCM_FMTS,
+ 		},
+ 		.capture 	= {
+-			.channels_min 	= 2,
++			.channels_min 	= 0,
+ 			.channels_max 	= 2,
+ 			.rates 		= DAVINCI_MCASP_RATES,
+ 			.formats	= DAVINCI_MCASP_PCM_FMTS,
+@@ -894,6 +891,7 @@ static struct snd_soc_dai_driver davinci_mcasp_dai[] = {
+ 		.ops 		= &davinci_mcasp_dai_ops,
+ 
+ 	},
++
+ 	{
+ 		"davinci-mcasp.1",
+ 		.playback 	= {
+@@ -902,9 +900,28 @@ static struct snd_soc_dai_driver davinci_mcasp_dai[] = {
+ 			.rates		= DAVINCI_MCASP_RATES,
+ 			.formats	= DAVINCI_MCASP_PCM_FMTS,
+ 		},
++		.capture 	= {
++			.channels_min 	= 0,
++			.channels_max 	= 0,
++			.rates 		= DAVINCI_MCASP_RATES,
++			.formats	= DAVINCI_MCASP_PCM_FMTS,
++		},
+ 		.ops 		= &davinci_mcasp_dai_ops,
+ 	},
+ 
++	/*{
++		.name		= "davinci-mcasp.1",
++		.playback 	= {
++			.channels_min	= 2,
++			.channels_max	= 2,
++			.rates		= DAVINCI_MCASP_RATES,
++			.formats	= SNDRV_PCM_FMTBIT_S8 |
++				SNDRV_PCM_FMTBIT_S16_LE |
++				SNDRV_PCM_FMTBIT_S32_LE,
++		},
++		.ops 		= &davinci_mcasp_dai_ops,
++	},*/
++
+ };
+ 
+ static int davinci_mcasp_probe(struct platform_device *pdev)
