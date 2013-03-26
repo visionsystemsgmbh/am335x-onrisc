@@ -5,19 +5,21 @@ From: Yegor Yefremov <yegorslists@googlemail.com>
 
 ---
 
- arch/arm/mach-omap2/board-am335xevm.c |   84 +++++++++++++++++++++++++++++++++
- arch/arm/mach-omap2/devices.c         |    5 ++
- drivers/video/display/siihdmi.c       |   63 ++++++++++++++++++++-----
- sound/soc/codecs/Kconfig              |    3 +
- sound/soc/codecs/Makefile             |    2 +
- sound/soc/davinci/Kconfig             |   18 +++++++
- sound/soc/davinci/davinci-evm.c       |   31 ++++++++++--
- sound/soc/davinci/davinci-mcasp.c     |   57 +++++++++++++++-------
- 8 files changed, 226 insertions(+), 37 deletions(-)
+ arch/arm/mach-omap2/board-am335xevm.c       |   95 +++++++++++++++++++++---
+ arch/arm/mach-omap2/devices.c               |    5 +
+ drivers/video/display/siihdmi.c             |   63 +++++++++++++---
+ sound/soc/codecs/Kconfig                    |    3 +
+ sound/soc/codecs/Makefile                   |    2 +
+ sound/soc/codecs/syno_sii9022a_hdmi_audio.c |  108 +++++++++++++++++++++++++++
+ sound/soc/davinci/Kconfig                   |   18 +++++
+ sound/soc/davinci/davinci-evm.c             |   31 +++++++-
+ sound/soc/davinci/davinci-mcasp.c           |   57 +++++++++-----
+ 9 files changed, 334 insertions(+), 48 deletions(-)
+ create mode 100644 sound/soc/codecs/syno_sii9022a_hdmi_audio.c
 
 
 diff --git a/arch/arm/mach-omap2/board-am335xevm.c b/arch/arm/mach-omap2/board-am335xevm.c
-index 8efac9d..e981c6e 100644
+index 8efac9d..4ad5143 100644
 --- a/arch/arm/mach-omap2/board-am335xevm.c
 +++ b/arch/arm/mach-omap2/board-am335xevm.c
 @@ -209,6 +209,43 @@ static struct snd_platform_data am335x_evm_sk_snd_data1 = {
@@ -144,6 +146,29 @@ index 8efac9d..e981c6e 100644
  	.tps65910_pmic_init_data[TPS65910_REG_VDIG1]	= &am335x_dummy,
  	.tps65910_pmic_init_data[TPS65910_REG_VDIG2]	= &am335x_dummy,
  	.tps65910_pmic_init_data[TPS65910_REG_VPLL]	= &am335x_dummy,
+@@ -2641,22 +2723,11 @@ static struct pca953x_platform_data alekto2_io_pb_info = {
+ */
+ static struct i2c_board_info __initdata am335x_i2c0_boardinfo[] = {
+ 	{
+-		/* Daughter Board EEPROM */
+-		I2C_BOARD_INFO("24c256", DAUG_BOARD_I2C_ADDR),
+-		.platform_data  = &am335x_daughter_board_eeprom_info,
+-	},
+-	{
+ 		/* Baseboard board EEPROM */
+ 		I2C_BOARD_INFO("24c256", BASEBOARD_I2C_ADDR),
+ 		.platform_data  = &am335x_baseboard_eeprom_info,
+ 	},
+ 	{
+-		I2C_BOARD_INFO("cpld_reg", 0x35),
+-	},
+-	{
+-		I2C_BOARD_INFO("tlc59108", 0x40),
+-	},
+-	{
+ 		I2C_BOARD_INFO("tps65910", TPS65910_I2C_ID1),
+ 		.platform_data  = &am335x_tps65910_info,
+ 	},
 diff --git a/arch/arm/mach-omap2/devices.c b/arch/arm/mach-omap2/devices.c
 index b930698..abe088d 100644
 --- a/arch/arm/mach-omap2/devices.c
@@ -313,6 +338,120 @@ index a2c7842..fb80749 100644
  
  # Amp
  obj-$(CONFIG_SND_SOC_LM4857)	+= snd-soc-lm4857.o
+diff --git a/sound/soc/codecs/syno_sii9022a_hdmi_audio.c b/sound/soc/codecs/syno_sii9022a_hdmi_audio.c
+new file mode 100644
+index 0000000..e80bf4e
+--- /dev/null
++++ b/sound/soc/codecs/syno_sii9022a_hdmi_audio.c
+@@ -0,0 +1,108 @@
++/*
++ * ALSA SiI9022a HDMI audio driver
++ *
++ * This driver is used by TI81XX devices to config SiI9022a HDMI audio
++ * where no codec is needed. This file provides stub codec that can be used
++ * in these configurations.
++ * Based on OMAP4 HDMI audio codec driver
++ *
++ * Author: ChengYeh Yu <cyyu@synology.com>
++ * Copyright: (C) 2012 synology Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/slab.h>
++#include <sound/soc.h>
++#include <sound/pcm.h>
++#include <sound/initval.h>
++#include <linux/i2c.h>
++
++static struct snd_soc_codec_driver soc_codec_sii9022a;
++static struct i2c_client *client;
++
++/* null function */
++
++static int
++sii9022a_set_dai_sysclk(struct snd_soc_dai *codec_dai,
++			int clk_id, unsigned int freq, int dir)
++{
++	return 0;
++}
++
++static int sii9022a_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
++{
++	return 0;
++}
++
++static struct snd_soc_dai_ops sii9022a_dai_ops = {
++	.set_sysclk = sii9022a_set_dai_sysclk,
++	.set_fmt = sii9022a_set_dai_fmt,
++};
++
++/* Dummy dai driver for HDMI */
++static struct snd_soc_dai_driver sii9022a_dai = {
++	.name = "sii9022a",
++	.playback = {
++		     .stream_name = "Playback",
++		     .channels_min = 2,
++		     .channels_max = 2,
++		     .rates = SNDRV_PCM_RATE_48000
++		     | SNDRV_PCM_RATE_32000
++		     | SNDRV_PCM_RATE_44100
++		     | SNDRV_PCM_RATE_96000
++		     | SNDRV_PCM_RATE_192000,
++		     .formats = SNDRV_PCM_FMTBIT_S16_LE
++		     | SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S24_LE,
++		     },
++	.ops = &sii9022a_dai_ops,
++};
++
++static int sii9022a_audio_codec_probe(struct platform_device *pdev)
++{
++	int ret;
++
++	ret = snd_soc_register_codec(&pdev->dev, &soc_codec_sii9022a,
++				     &sii9022a_dai, 1);
++	if (ret < 0)
++		printk(KERN_INFO "SiI9022a HDMI Codec register Failed\n");
++	else
++		printk(KERN_INFO "Registered SiI9022a HDMI audio codec\n");
++
++	return ret;
++}
++
++static int sii9022a_audio_codec_remove(struct platform_device *pdev)
++{
++	snd_soc_unregister_codec(&pdev->dev);
++	return 0;
++}
++
++static struct platform_driver sii9022a_audio_codec_driver = {
++	.probe = sii9022a_audio_codec_probe,
++	.remove = sii9022a_audio_codec_remove,
++	.driver = {
++		   .name = "sii9022a-audio",
++		   .owner = THIS_MODULE,
++		   },
++};
++
++static int __init sii9022a_audio_init(void)
++{
++	return platform_driver_register(&sii9022a_audio_codec_driver);
++}
++
++static void __exit sii9022a_audio_exit(void)
++{
++	platform_driver_unregister(&sii9022a_audio_codec_driver);
++}
++
++module_init(sii9022a_audio_init);
++module_exit(sii9022a_audio_exit);
++
++MODULE_DESCRIPTION(" SiI9022a Audio Dummy codec Interface");
++MODULE_LICENSE("GPL");
 diff --git a/sound/soc/davinci/Kconfig b/sound/soc/davinci/Kconfig
 index 6b8dc37..61f9af5 100644
 --- a/sound/soc/davinci/Kconfig
@@ -343,7 +482,7 @@ index 6b8dc37..61f9af5 100644
  	tristate
  
 diff --git a/sound/soc/davinci/davinci-evm.c b/sound/soc/davinci/davinci-evm.c
-index fe1563c..0f988c9 100644
+index fe1563c..6c00a27 100644
 --- a/sound/soc/davinci/davinci-evm.c
 +++ b/sound/soc/davinci/davinci-evm.c
 @@ -34,6 +34,11 @@
@@ -385,7 +524,7 @@ index fe1563c..0f988c9 100644
 +	.codec_dai_name = "sii9022a", /* DAI name */
 +	.codec_name = "sii9022a-audio",
 +
-+#if defined(CONFIG_SOC_OMAPAM33XX_I2S)	
++#if defined(CONFIG_SOC_OMAPAM33XX_I2S)
 +	.ops = &evm_ops,
 +#else
 +	.ops = &evm_spdif_ops,
