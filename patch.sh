@@ -2,7 +2,7 @@
 
 DIR="$PWD"
 
-EXTERNAL_BRANCH=v3.2-staging
+COMMIT=0e6a805aac5bb916350190b0e853e620c315edd5
 
 # fetch and patch kernel
 if [ ! -d ${DIR}/kernel ] ; then
@@ -13,10 +13,10 @@ cd ${DIR}/kernel
 
 if [ ! -f ./.git/config ] ; then
 	git clone http://arago-project.org/git/projects/linux-am33x.git .
-	git checkout $EXTERNAL_BRANCH
+	git checkout $COMMIT
+	git checkout -b onrisc
 	stg init
 	stg import -s $DIR/patches/series
-	stg push -a
 else
 	git fetch
 fi
