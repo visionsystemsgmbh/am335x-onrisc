@@ -2,3 +2,5 @@
 01-basic-bsp.patch
 02-sii9022-support.patch
 03-rtc-support.patch
+04-audio-support.patch
+05-usb-mass-storage-fix.patch

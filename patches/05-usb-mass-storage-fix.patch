@@ -1,0 +1,3697 @@
+diff --git a/drivers/usb/musb/cppi41.c b/drivers/usb/musb/cppi41.c
+index bd6f059..ba4e172 100644
+--- a/drivers/usb/musb/cppi41.c
++++ b/drivers/usb/musb/cppi41.c
+@@ -49,7 +49,7 @@ static struct {
+ static u32 *allocated_queues[CPPI41_NUM_QUEUE_MGR];
+ 
+ /* First 32 packet descriptors are reserved for unallocated memory regions. */
+-static u32 next_desc_index[CPPI41_NUM_QUEUE_MGR] = { 0 };
++static u32 next_desc_index[CPPI41_NUM_QUEUE_MGR] = { 1 << 5 };
+ static u8  next_mem_rgn[CPPI41_NUM_QUEUE_MGR];
+ 
+ static struct {
+@@ -109,19 +109,19 @@ int cppi41_queue_mgr_init(u8 q_mgr, dma_addr_t rgn0_base, u16 rgn0_size)
+ 	linking_ram[q_mgr].virt_addr = ptr;
+ 	linking_ram[q_mgr].size = rgn0_size * 4;
+ 
+-	cppi_writel(linking_ram[q_mgr].phys_addr,
++	__raw_writel(linking_ram[q_mgr].phys_addr,
+ 			q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG);
+ 	DBG("Linking RAM region 0 base @ %p, value: %x\n",
+ 	    q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG,
+-	    cppi_readl(q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG));
++	    __raw_readl(q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG));
+ 
+-	cppi_writel(rgn0_size, q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG);
++	__raw_writel(rgn0_size, q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG);
+ 	DBG("Linking RAM region 0 size @ %p, value: %x\n",
+ 	    q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG,
+-	    cppi_readl(q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG));
++	    __raw_readl(q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG));
+ 
+-	ptr = kzalloc(BITS_TO_LONGS(cppi41_queue_mgr[q_mgr].num_queue) *
+-			sizeof(long), GFP_KERNEL);
++	ptr = kzalloc(BITS_TO_LONGS(cppi41_queue_mgr[q_mgr].num_queue),
++		      GFP_KERNEL);
+ 	if (ptr == NULL) {
+ 		printk(KERN_ERR "ERROR: %s: Unable to allocate queue bitmap.\n",
+ 		       __func__);
+@@ -146,8 +146,8 @@ int cppi41_queue_mgr_uninit(u8 q_mgr)
+ 	q_mgr_regs = cppi41_queue_mgr[q_mgr].q_mgr_rgn_base;
+ 
+ 	/* free the Queue Mgr linking ram space */
+-	cppi_writel(0,	q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG);
+-	cppi_writel(0, q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG);
++	__raw_writel(0,	q_mgr_regs + QMGR_LINKING_RAM_RGN0_BASE_REG);
++	__raw_writel(0, q_mgr_regs + QMGR_LINKING_RAM_RGN0_SIZE_REG);
+ 	dma_free_coherent(NULL, linking_ram[q_mgr].size,
+ 			linking_ram[q_mgr].virt_addr,
+ 			linking_ram[q_mgr].phys_addr);
+@@ -176,7 +176,7 @@ int cppi41_dma_sched_tbl_init(u8 dma_num, u8 q_mgr,
+ 		}
+ #endif
+ 		val = sched_tbl[i];
+-		cppi_writel(val, dma_block->sched_table_base +
++		__raw_writel(val, dma_block->sched_table_base +
+ 			DMA_SCHED_TABLE_WORD_REG(i));
+ 		DBG("DMA scheduler table @ %p, value written: %x\n",
+ 		dma_block->sched_table_base + DMA_SCHED_TABLE_WORD_REG(i),
+@@ -210,7 +210,7 @@ int cppi41_schedtbl_add_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx)
+ 			j++;
+ 		}
+ 		if (num_ch % 4 == 0) {
+-			cppi_writel(val, dma_block->sched_table_base +
++			__raw_writel(val, dma_block->sched_table_base +
+ 				DMA_SCHED_TABLE_WORD_REG(tbl_index));
+ 			tbl_index++;
+ 			val = j = 0;
+@@ -218,7 +218,7 @@ int cppi41_schedtbl_add_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx)
+ 	}
+ 
+ 	if (num_ch % 4) {
+-		cppi_writel(val, dma_block->sched_table_base +
++		__raw_writel(val, dma_block->sched_table_base +
+ 			DMA_SCHED_TABLE_WORD_REG(tbl_index));
+ 	}
+ 	return num_ch;
+@@ -248,7 +248,7 @@ int cppi41_schedtbl_remove_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx)
+ 			j++;
+ 		}
+ 		if (num_ch % 4 == 0) {
+-			cppi_writel(val, dma_block->sched_table_base +
++			__raw_writel(val, dma_block->sched_table_base +
+ 				DMA_SCHED_TABLE_WORD_REG(tbl_index));
+ 			tbl_index++;
+ 			val = j = 0;
+@@ -256,7 +256,7 @@ int cppi41_schedtbl_remove_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx)
+ 	}
+ 
+ 	if (num_ch % 4) {
+-		cppi_writel(val, dma_block->sched_table_base +
++		__raw_writel(val, dma_block->sched_table_base +
+ 			DMA_SCHED_TABLE_WORD_REG(tbl_index));
+ 	}
+ 	return num_ch;
+@@ -267,6 +267,8 @@ int cppi41_dma_block_init(u8 dma_num, u8 q_mgr, u8 num_order,
+ 				 u32 *sched_tbl, u8 tbl_size)
+ {
+ 	const struct cppi41_dma_block *dma_block;
++	struct cppi41_teardown_desc *curr_td;
++	dma_addr_t td_addr;
+ 	unsigned num_desc, num_reg;
+ 	void *ptr;
+ 	int error, i;
+@@ -293,13 +295,13 @@ int cppi41_dma_block_init(u8 dma_num, u8 q_mgr, u8 num_order,
+ 	 * queue manager and queue number.
+ 	 */
+ 	dma_block = &cppi41_dma_block[dma_num];
+-	cppi_writel((q_mgr << DMA_TD_DESC_QMGR_SHIFT) |
++	__raw_writel((q_mgr << DMA_TD_DESC_QMGR_SHIFT) |
+ 		     (q_num << DMA_TD_DESC_QNUM_SHIFT),
+ 		     dma_block->global_ctrl_base +
+ 		     DMA_TEARDOWN_FREE_DESC_CTRL_REG);
+ 	DBG("Teardown free descriptor control @ %p, value: %x\n",
+ 	    dma_block->global_ctrl_base + DMA_TEARDOWN_FREE_DESC_CTRL_REG,
+-	    cppi_readl(dma_block->global_ctrl_base +
++	    __raw_readl(dma_block->global_ctrl_base +
+ 			DMA_TEARDOWN_FREE_DESC_CTRL_REG));
+ 
+ 	num_desc = 1 << num_order;
+@@ -335,30 +337,37 @@ int cppi41_dma_block_init(u8 dma_num, u8 q_mgr, u8 num_order,
+ 
+ 	dma_teardown[dma_num].q_num = q_num;
+ 	dma_teardown[dma_num].q_mgr = q_mgr;
+-	dma_teardown[dma_num].num_desc = num_desc;
+ 	/*
+ 	 * Push all teardown descriptors to the free teardown queue
+ 	 * for the CPPI 4.1 system.
+ 	 */
+-	cppi41_init_teardown_queue(dma_num);
++	curr_td = dma_teardown[dma_num].virt_addr;
++	td_addr = dma_teardown[dma_num].phys_addr;
++
++	for (i = 0; i < num_desc; i++) {
++		cppi41_queue_push(&dma_teardown[dma_num].queue_obj, td_addr,
++				  sizeof(*curr_td), 0);
++		td_addr += sizeof(*curr_td);
++	}
++	dma_teardown[dma_num].num_desc = num_desc;
+ 
+ 	/* Initialize the DMA scheduler. */
+ 	num_reg = (tbl_size + 3) / 4;
+ 	for (i = 0; i < num_reg; i++) {
+ 		val = sched_tbl[i];
+-		cppi_writel(val, dma_block->sched_table_base +
++		__raw_writel(val, dma_block->sched_table_base +
+ 			     DMA_SCHED_TABLE_WORD_REG(i));
+ 		DBG("DMA scheduler table @ %p, value written: %x\n",
+ 		    dma_block->sched_table_base + DMA_SCHED_TABLE_WORD_REG(i),
+ 		    val);
+ 	}
+ 
+-	cppi_writel((tbl_size - 1) << DMA_SCHED_LAST_ENTRY_SHIFT |
++	__raw_writel((tbl_size - 1) << DMA_SCHED_LAST_ENTRY_SHIFT |
+ 		     DMA_SCHED_ENABLE_MASK,
+ 		     dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG);
+ 	DBG("DMA scheduler control @ %p, value: %x\n",
+ 	    dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG,
+-	    cppi_readl(dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG));
++	    __raw_readl(dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG));
+ 
+ 	return 0;
+ 
+@@ -399,14 +408,14 @@ int cppi41_dma_block_uninit(u8 dma_num, u8 q_mgr, u8 num_order,
+ 	/* disable the dma schedular */
+ 	num_reg = (tbl_size + 3) / 4;
+ 	for (i = 0; i < num_reg; i++) {
+-		cppi_writel(0, dma_block->sched_table_base +
++		__raw_writel(0, dma_block->sched_table_base +
+ 			     DMA_SCHED_TABLE_WORD_REG(i));
+ 		DBG("DMA scheduler table @ %p, value written: %x\n",
+ 		    dma_block->sched_table_base + DMA_SCHED_TABLE_WORD_REG(i),
+ 		    0);
+ 	}
+ 
+-	cppi_writel(0,	dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG);
++	__raw_writel(0,	dma_block->sched_ctrl_base + DMA_SCHED_CTRL_REG);
+ 
+ 	return 0;
+ }
+@@ -441,10 +450,10 @@ int cppi41_mem_rgn_alloc(u8 q_mgr, dma_addr_t rgn_addr, u8 size_order,
+ 	desc_mem_regs = cppi41_queue_mgr[q_mgr].desc_mem_rgn_base;
+ 
+ 	/* Write the base register */
+-	cppi_writel(rgn_addr, desc_mem_regs + QMGR_MEM_RGN_BASE_REG(rgn));
++	__raw_writel(rgn_addr, desc_mem_regs + QMGR_MEM_RGN_BASE_REG(rgn));
+ 	DBG("Descriptor region base @ %p, value: %x\n",
+ 	    desc_mem_regs + QMGR_MEM_RGN_BASE_REG(rgn),
+-	    cppi_readl(desc_mem_regs + QMGR_MEM_RGN_BASE_REG(rgn)));
++	    __raw_readl(desc_mem_regs + QMGR_MEM_RGN_BASE_REG(rgn)));
+ 
+ 	/* Write the control register */
+ 	ctrl = ((index << QMGR_MEM_RGN_INDEX_SHIFT) &
+@@ -453,10 +462,10 @@ int cppi41_mem_rgn_alloc(u8 q_mgr, dma_addr_t rgn_addr, u8 size_order,
+ 		QMGR_MEM_RGN_DESC_SIZE_MASK) |
+ 	       (((num_order - 5) << QMGR_MEM_RGN_SIZE_SHIFT) &
+ 		QMGR_MEM_RGN_SIZE_MASK);
+-	cppi_writel(ctrl, desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(rgn));
++	__raw_writel(ctrl, desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(rgn));
+ 	DBG("Descriptor region control @ %p, value: %x\n",
+ 	    desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(rgn),
+-	    cppi_readl(desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(rgn)));
++	    __raw_readl(desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(rgn)));
+ 
+ 	*mem_rgn = rgn;
+ 	return 0;
+@@ -477,11 +486,11 @@ int cppi41_mem_rgn_free(u8 q_mgr, u8 mem_rgn)
+ 
+ 	desc_mem_regs = cppi41_queue_mgr[q_mgr].desc_mem_rgn_base;
+ 
+-	if (cppi_readl(desc_mem_regs + QMGR_MEM_RGN_BASE_REG(mem_rgn)) == 0)
++	if (__raw_readl(desc_mem_regs + QMGR_MEM_RGN_BASE_REG(mem_rgn)) == 0)
+ 		return -ENOENT;
+ 
+-	cppi_writel(0, desc_mem_regs + QMGR_MEM_RGN_BASE_REG(mem_rgn));
+-	cppi_writel(0, desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(mem_rgn));
++	__raw_writel(0, desc_mem_regs + QMGR_MEM_RGN_BASE_REG(mem_rgn));
++	__raw_writel(0, desc_mem_regs + QMGR_MEM_RGN_CTRL_REG(mem_rgn));
+ 
+ 	return 0;
+ }
+@@ -503,7 +512,7 @@ int cppi41_tx_ch_init(struct cppi41_dma_ch_obj *tx_ch_obj,
+ 	/* Populate the channel object structure */
+ 	tx_ch_obj->base_addr  = cppi41_dma_block[dma_num].ch_ctrl_stat_base +
+ 				DMA_CH_TX_GLOBAL_CFG_REG(ch_num);
+-	tx_ch_obj->global_cfg = cppi_readl(tx_ch_obj->base_addr);
++	tx_ch_obj->global_cfg = __raw_readl(tx_ch_obj->base_addr);
+ 	return 0;
+ }
+ EXPORT_SYMBOL(cppi41_tx_ch_init);
+@@ -524,7 +533,7 @@ int cppi41_rx_ch_init(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 	/* Populate the channel object structure */
+ 	rx_ch_obj->base_addr  = cppi41_dma_block[dma_num].ch_ctrl_stat_base +
+ 				DMA_CH_RX_GLOBAL_CFG_REG(ch_num);
+-	rx_ch_obj->global_cfg = cppi_readl(rx_ch_obj->base_addr);
++	rx_ch_obj->global_cfg = __raw_readl(rx_ch_obj->base_addr);
+ 	return 0;
+ }
+ EXPORT_SYMBOL(cppi41_rx_ch_init);
+@@ -557,11 +566,11 @@ void cppi41_dma_ch_default_queue(struct cppi41_dma_ch_obj *dma_ch_obj,
+ 		DMA_CH_TX_DEFAULT_QNUM_MASK);
+ 
+ 	/* Get the current state of the enable bit. */
+-	dma_ch_obj->global_cfg = val |= cppi_readl(dma_ch_obj->base_addr);
+-	cppi_writel(val, dma_ch_obj->base_addr);
++	dma_ch_obj->global_cfg = val |= __raw_readl(dma_ch_obj->base_addr);
++	__raw_writel(val, dma_ch_obj->base_addr);
+ 	DBG("Channel global configuration @ %p, value written: %x, "
+ 	    "value read: %x\n", dma_ch_obj->base_addr, val,
+-	    cppi_readl(dma_ch_obj->base_addr));
++	    __raw_readl(dma_ch_obj->base_addr));
+ 
+ }
+ EXPORT_SYMBOL(cppi41_dma_ch_default_queue);
+@@ -573,7 +582,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			    struct cppi41_rx_ch_cfg  *cfg)
+ {
+ 	void __iomem *base = rx_ch_obj->base_addr;
+-	u32 val = cppi_readl(rx_ch_obj->base_addr);
++	u32 val = __raw_readl(rx_ch_obj->base_addr);
+ 
+ 	val |= ((cfg->sop_offset << DMA_CH_RX_SOP_OFFSET_SHIFT) &
+ 		DMA_CH_RX_SOP_OFFSET_MASK) |
+@@ -590,9 +599,9 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 	val |= (cfg->rx_max_buf_cnt << DMA_CH_RX_MAX_BUF_CNT_SHIFT);
+ 
+ 	rx_ch_obj->global_cfg = val;
+-	cppi_writel(val, base);
++	__raw_writel(val, base);
+ 	DBG("Rx channel global configuration @ %p, value written: %x, "
+-	    "value read: %x\n", base, val, cppi_readl(base));
++	    "value read: %x\n", base, val, __raw_readl(base));
+ 
+ 	base -= DMA_CH_RX_GLOBAL_CFG_REG(0);
+ 
+@@ -615,7 +624,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			DMA_CH_RX_EMBED_SOP_SLOT_SHIFT) &
+ 		       DMA_CH_RX_EMBED_SOP_SLOT_MASK);
+ 
+-		cppi_writel(val, base + DMA_CH_RX_EMBED_PKT_CFG_REG_B(0));
++		__raw_writel(val, base + DMA_CH_RX_EMBED_PKT_CFG_REG_B(0));
+ 		DBG("Rx channel embedded packet configuration B @ %p, "
+ 		    "value written: %x\n",
+ 		    base + DMA_CH_RX_EMBED_PKT_CFG_REG_B(0), val);
+@@ -645,7 +654,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			DMA_CH_RX_EMBED_FBP_BMGR_SHIFT(3)) &
+ 		       DMA_CH_RX_EMBED_FBP_BMGR_MASK(3));
+ 
+-		cppi_writel(val, base + DMA_CH_RX_EMBED_PKT_CFG_REG_A(0));
++		__raw_writel(val, base + DMA_CH_RX_EMBED_PKT_CFG_REG_A(0));
+ 		DBG("Rx channel embedded packet configuration A @ %p, "
+ 		    "value written: %x\n",
+ 		    base + DMA_CH_RX_EMBED_PKT_CFG_REG_A(0), val);
+@@ -664,7 +673,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			DMA_CH_RX_HOST_FDQ_QMGR_SHIFT(1)) &
+ 		       DMA_CH_RX_HOST_FDQ_QMGR_MASK(1));
+ 
+-		cppi_writel(val, base + DMA_CH_RX_HOST_PKT_CFG_REG_A(0));
++		__raw_writel(val, base + DMA_CH_RX_HOST_PKT_CFG_REG_A(0));
+ 		DBG("Rx channel host packet configuration A @ %p, "
+ 		    "value written: %x\n",
+ 		    base + DMA_CH_RX_HOST_PKT_CFG_REG_A(0), val);
+@@ -682,7 +691,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			DMA_CH_RX_HOST_FDQ_QMGR_SHIFT(3)) &
+ 		       DMA_CH_RX_HOST_FDQ_QMGR_MASK(3));
+ 
+-		cppi_writel(val, base + DMA_CH_RX_HOST_PKT_CFG_REG_B(0));
++		__raw_writel(val, base + DMA_CH_RX_HOST_PKT_CFG_REG_B(0));
+ 		DBG("Rx channel host packet configuration B @ %p, "
+ 		    "value written: %x\n",
+ 		    base + DMA_CH_RX_HOST_PKT_CFG_REG_B(0), val);
+@@ -698,7 +707,7 @@ void cppi41_rx_ch_configure(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			DMA_CH_RX_MONO_SOP_OFFSET_SHIFT) &
+ 		       DMA_CH_RX_MONO_SOP_OFFSET_MASK);
+ 
+-		cppi_writel(val, base + DMA_CH_RX_MONO_PKT_CFG_REG(0));
++		__raw_writel(val, base + DMA_CH_RX_MONO_PKT_CFG_REG(0));
+ 		DBG("Rx channel monolithic packet configuration @ %p, "
+ 		    "value written: %x\n",
+ 		    base + DMA_CH_RX_MONO_PKT_CFG_REG(0), val);
+@@ -711,17 +720,17 @@ void cppi41_rx_ch_set_maxbufcnt(struct cppi41_dma_ch_obj *rx_ch_obj,
+ 			    u8 rx_max_buf_cnt)
+ {
+ 	void __iomem *base = rx_ch_obj->base_addr;
+-	u32 val = cppi_readl(rx_ch_obj->base_addr);
++	u32 val = __raw_readl(rx_ch_obj->base_addr);
+ 
+ 	val = rx_ch_obj->global_cfg;
+ 	val &= ~(0x7 << DMA_CH_RX_MAX_BUF_CNT_SHIFT);
+ 	val |= (rx_max_buf_cnt << DMA_CH_RX_MAX_BUF_CNT_SHIFT);
+ 
+ 	rx_ch_obj->global_cfg = val;
+-	cppi_writel(val, base);
++	__raw_writel(val, base);
+ 
+ 	DBG("%s: rx-global-cfg @ %p, value written: %x, "
+-	    "value read: %x\n", __func__, base, val, cppi_readl(base));
++	    "value read: %x\n", __func__, base, val, __raw_readl(base));
+ 
+ }
+ EXPORT_SYMBOL(cppi41_rx_ch_set_maxbufcnt);
+@@ -730,14 +739,14 @@ EXPORT_SYMBOL(cppi41_rx_ch_set_maxbufcnt);
+  */
+ void cppi41_dma_ch_teardown(struct cppi41_dma_ch_obj *dma_ch_obj)
+ {
+-	u32 val = cppi_readl(dma_ch_obj->base_addr);
++	u32 val = __raw_readl(dma_ch_obj->base_addr);
+ 
+ 	/* Initiate channel teardown. */
+ 	val |= dma_ch_obj->global_cfg & ~DMA_CH_TX_ENABLE_MASK;
+ 	dma_ch_obj->global_cfg = val |= DMA_CH_TX_TEARDOWN_MASK;
+-	cppi_writel(val, dma_ch_obj->base_addr);
++	__raw_writel(val, dma_ch_obj->base_addr);
+ 	DBG("Tear down channel @ %p, value written: %x, value read: %x\n",
+-	    dma_ch_obj->base_addr, val, cppi_readl(dma_ch_obj->base_addr));
++	    dma_ch_obj->base_addr, val, __raw_readl(dma_ch_obj->base_addr));
+ }
+ EXPORT_SYMBOL(cppi41_dma_ch_teardown);
+ 
+@@ -752,9 +761,9 @@ void cppi41_dma_ch_enable(struct cppi41_dma_ch_obj *dma_ch_obj)
+ 
+ 	/* Teardown bit remains set after completion, so clear it now... */
+ 	dma_ch_obj->global_cfg = val &= ~DMA_CH_TX_TEARDOWN_MASK;
+-	cppi_writel(val, dma_ch_obj->base_addr);
++	__raw_writel(val, dma_ch_obj->base_addr);
+ 	DBG("Enable channel @ %p, value written: %x, value read: %x\n",
+-	    dma_ch_obj->base_addr, val, cppi_readl(dma_ch_obj->base_addr));
++	    dma_ch_obj->base_addr, val, __raw_readl(dma_ch_obj->base_addr));
+ }
+ EXPORT_SYMBOL(cppi41_dma_ch_enable);
+ 
+@@ -764,31 +773,13 @@ EXPORT_SYMBOL(cppi41_dma_ch_enable);
+ void cppi41_dma_ch_disable(struct cppi41_dma_ch_obj *dma_ch_obj)
+ {
+ 	dma_ch_obj->global_cfg &= ~DMA_CH_TX_ENABLE_MASK;
+-	cppi_writel(dma_ch_obj->global_cfg, dma_ch_obj->base_addr);
++	__raw_writel(dma_ch_obj->global_cfg, dma_ch_obj->base_addr);
+ 	DBG("Disable channel @ %p, value written: %x, value read: %x\n",
+ 	    dma_ch_obj->base_addr, dma_ch_obj->global_cfg,
+-	    cppi_readl(dma_ch_obj->base_addr));
++	    __raw_readl(dma_ch_obj->base_addr));
+ }
+ EXPORT_SYMBOL(cppi41_dma_ch_disable);
+ 
+-void cppi41_init_teardown_queue(int dma_num)
+-{
+-	dma_addr_t td_addr;
+-	struct cppi41_teardown_desc *curr_td;
+-	u32 num_desc = dma_teardown[dma_num].num_desc;
+-	int i;
+-
+-	curr_td = dma_teardown[dma_num].virt_addr;
+-	td_addr = dma_teardown[dma_num].phys_addr;
+-
+-	for (i = 0; i < num_desc; i++) {
+-		cppi41_queue_push(&dma_teardown[dma_num].queue_obj, td_addr,
+-				  sizeof(*curr_td), 0);
+-		td_addr += sizeof(*curr_td);
+-	}
+-}
+-EXPORT_SYMBOL(cppi41_init_teardown_queue);
+-
+ void cppi41_free_teardown_queue(int dma_num)
+ {
+ 	unsigned long td_addr;
+@@ -949,7 +940,7 @@ void cppi41_queue_push(const struct cppi41_queue_obj *queue_obj, u32 desc_addr,
+ 	if (pkt_size)
+ 		val = (pkt_size << QMGR_QUEUE_PKT_SIZE_SHIFT) &
+ 		      QMGR_QUEUE_PKT_SIZE_MASK;
+-	cppi_writel(val, queue_obj->base_addr + QMGR_QUEUE_REG_C(0));
++	__raw_writel(val, queue_obj->base_addr + QMGR_QUEUE_REG_C(0));
+ #endif
+ 
+ 	val = (((desc_size - 24) >> (2 - QMGR_QUEUE_DESC_SIZE_SHIFT)) &
+@@ -958,7 +949,7 @@ void cppi41_queue_push(const struct cppi41_queue_obj *queue_obj, u32 desc_addr,
+ 
+ 	DBG("Pushing value %x to queue @ %p\n", val, queue_obj->base_addr);
+ 
+-	cppi_writel(val, queue_obj->base_addr + QMGR_QUEUE_REG_D(0));
++	__raw_writel(val, queue_obj->base_addr + QMGR_QUEUE_REG_D(0));
+ }
+ EXPORT_SYMBOL(cppi41_queue_push);
+ 
+@@ -967,7 +958,7 @@ EXPORT_SYMBOL(cppi41_queue_push);
+  */
+ unsigned long cppi41_queue_pop(const struct cppi41_queue_obj *queue_obj)
+ {
+-	u32 val = cppi_readl(queue_obj->base_addr + QMGR_QUEUE_REG_D(0));
++	u32 val = __raw_readl(queue_obj->base_addr + QMGR_QUEUE_REG_D(0));
+ 
+ 	DBG("Popping value %x from queue @ %p\n", val, queue_obj->base_addr);
+ 
+@@ -1016,109 +1007,6 @@ int cppi41_get_teardown_info(unsigned long addr, u32 *info)
+ }
+ EXPORT_SYMBOL(cppi41_get_teardown_info);
+ 
+-/*
+- * cppi41_save_context - save regsiter context before going to suspend.
+- */
+-void cppi41_save_context(u8 dma_num)
+-{
+-	const struct cppi41_dma_block *dma_block;
+-	struct cppi41_dma_regs *cppi41;
+-	struct cppi41_queue_manager *qmgr;
+-	void __iomem *q_mgr_regs, *desc_mem_regs;
+-	u8 i, q_mgr = 0;
+-
+-	dma_block = (struct cppi41_dma_block *)&cppi41_dma_block[dma_num];
+-	cppi41 = (struct cppi41_dma_regs *)&dma_block->cppi41_regs;
+-	qmgr = &cppi41->qmgr;
+-	q_mgr_regs = cppi41_queue_mgr[q_mgr].q_mgr_rgn_base;
+-	desc_mem_regs = cppi41_queue_mgr[q_mgr].desc_mem_rgn_base;
+-
+-	/* popout all teardown descriptors */
+-	cppi41_free_teardown_queue(dma_num);
+-
+-	cppi41->teardn_fdq_ctrl = cppi_readl(dma_block->global_ctrl_base +
+-			DMA_TEARDOWN_FREE_DESC_CTRL_REG);
+-	cppi41->emulation_ctrl = cppi_readl(dma_block->global_ctrl_base +
+-			DMA_EMULATION_CTRL_REG);
+-
+-	qmgr->link_ram_rgn0_base = cppi_readl(q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN0_BASE_REG);
+-	qmgr->link_ram_rgn0_size = cppi_readl(q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN0_SIZE_REG);
+-	qmgr->link_ram_rgn1_base = cppi_readl(q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN1_BASE_REG);
+-
+-	for (i = 0 ; i < 8 ; i++) {
+-		qmgr->memr_base[i] = cppi_readl(desc_mem_regs +
+-				QMGR_MEM_RGN_BASE_REG(i));
+-		qmgr->memr_ctrl[i] = cppi_readl(desc_mem_regs +
+-				QMGR_MEM_RGN_CTRL_REG(i));
+-	}
+-
+-	cppi41->sched_ctrl = cppi_readl(dma_block->sched_ctrl_base +
+-				DMA_SCHED_CTRL_REG);
+-
+-}
+-EXPORT_SYMBOL(cppi41_save_context);
+-
+-/*
+- * cppi41_restore_context - restore regsiter context after resume.
+- */
+-void cppi41_restore_context(u8 dma_num, u32 *sched_tbl)
+-{
+-	const struct cppi41_dma_block *dma_block;
+-	struct cppi41_dma_regs *cppi41;
+-	struct cppi41_queue_manager *qmgr;
+-	void __iomem *q_mgr_regs, *desc_mem_regs;
+-	unsigned num_reg;
+-	u32 val;
+-	u8 tbl_size;
+-	u8 i, q_mgr = 0;
+-
+-	dma_block = (struct cppi41_dma_block *)&cppi41_dma_block[dma_num];
+-	cppi41 = (struct cppi41_dma_regs *)&dma_block->cppi41_regs;
+-	qmgr = &cppi41->qmgr;
+-	q_mgr_regs = cppi41_queue_mgr[q_mgr].q_mgr_rgn_base;
+-	desc_mem_regs = cppi41_queue_mgr[q_mgr].desc_mem_rgn_base;
+-	tbl_size = dma_block->num_max_ch;
+-
+-	cppi_writel(cppi41->teardn_fdq_ctrl, dma_block->global_ctrl_base +
+-			DMA_TEARDOWN_FREE_DESC_CTRL_REG);
+-	cppi_writel(cppi41->emulation_ctrl, dma_block->global_ctrl_base +
+-			DMA_EMULATION_CTRL_REG);
+-
+-	cppi_writel(qmgr->link_ram_rgn0_base, q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN0_BASE_REG);
+-	cppi_writel(qmgr->link_ram_rgn0_size, q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN0_SIZE_REG);
+-	cppi_writel(qmgr->link_ram_rgn1_base, q_mgr_regs +
+-				QMGR_LINKING_RAM_RGN1_BASE_REG);
+-
+-	for (i = 0 ; i < 8 ; i++) {
+-		cppi_writel(qmgr->memr_base[i], desc_mem_regs +
+-				QMGR_MEM_RGN_BASE_REG(i));
+-		cppi_writel(qmgr->memr_ctrl[i], desc_mem_regs +
+-				QMGR_MEM_RGN_CTRL_REG(i));
+-	}
+-
+-	/*
+-	 * Push all teardown descriptors to the free teardown queue
+-	 * for the CPPI 4.1 system.
+-	 */
+-	cppi41_init_teardown_queue(dma_num);
+-
+-	/* Initialize the DMA scheduler. */
+-	num_reg = (tbl_size + 3) / 4;
+-	for (i = 0; i < num_reg; i++) {
+-		val = sched_tbl[i];
+-		cppi_writel(val, dma_block->sched_table_base +
+-			     DMA_SCHED_TABLE_WORD_REG(i));
+-	}
+-	cppi_writel(cppi41->sched_ctrl, dma_block->sched_ctrl_base +
+-				DMA_SCHED_CTRL_REG);
+-}
+-EXPORT_SYMBOL(cppi41_restore_context);
+-
+ MODULE_DESCRIPTION("TI CPPI 4.1 support");
+ MODULE_AUTHOR("MontaVista Software");
+ MODULE_LICENSE("GPL");
+diff --git a/drivers/usb/musb/cppi41.h b/drivers/usb/musb/cppi41.h
+index 2043320..07219fe 100644
+--- a/drivers/usb/musb/cppi41.h
++++ b/drivers/usb/musb/cppi41.h
+@@ -259,7 +259,6 @@ struct cppi41_host_buf_desc {
+ #define CPPI41_PKT_TYPE_USB		5
+ #define CPPI41_PKT_TYPE_GENERIC		6
+ #define CPPI41_PKT_TYPE_ETHERNET	7
+-#define CPPI41_ZLP			(1 << 19)
+ #define CPPI41_RETURN_POLICY_SHIFT	15
+ #define CPPI41_RETURN_POLICY_MASK	(1 << CPPI41_RETURN_POLICY_SHIFT)
+ #define CPPI41_RETURN_LINKED		0
+@@ -306,34 +305,6 @@ struct cppi41_teardown_desc {
+ #define cppi41_num_dma_block	CPPI41_NUM_DMA_BLOCK
+ 
+ /**
+- * struct cppi41_queue_manager - CPPI 4.1 DMA queue manager registers for
+- * context save and restore.
+- */
+-struct cppi41_queue_manager {
+-	u32	link_ram_rgn0_base;
+-	u32	link_ram_rgn0_size;
+-	u32	link_ram_rgn1_base;
+-
+-	u32	memr_base[8];
+-	u32	memr_ctrl[8];
+-};
+-
+-/**
+- * struct cppi41_dma_regs - CPPI 4.1 DMA registers for
+- * context save and restore.
+- */
+-struct cppi41_dma_regs {
+-	u32	teardn_fdq_ctrl;
+-	u32	emulation_ctrl;
+-
+-	/* CPPI DMA scheduler registers */
+-	u32	sched_ctrl;
+-
+-	/* Queue manager registers */
+-	struct cppi41_queue_manager qmgr;
+-};
+-
+-/**
+  * struct cppi41_queue - Queue Tuple
+  *
+  * The basic queue tuple in CPPI 4.1 used across all data structures
+@@ -512,7 +483,6 @@ struct cppi41_dma_block {
+ 	u8 num_rx_ch;		/* Number of the Rx channels. */
+ 	u8 num_max_ch;		/* maximum dma channels */
+ 	const struct cppi41_tx_ch *tx_ch_info;
+-	struct cppi41_dma_regs cppi41_regs; /* registers to save and restore */
+ };
+ 
+ extern struct cppi41_queue_mgr cppi41_queue_mgr[];
+@@ -535,10 +505,6 @@ struct cppi41_queue_obj {
+ 				/* registers */
+ };
+ 
+-static inline u32 cppi_readl(const void __iomem *addr)
+-	{ return readl(addr); }
+-static inline void cppi_writel(u32 data, void __iomem *addr)
+-	{ writel(data, addr); }
+ /**
+  * cppi41_queue_mgr_init - CPPI 4.1 queue manager initialization.
+  * @q_mgr:	the queue manager to initialize
+@@ -831,21 +797,6 @@ int cppi41_schedtbl_add_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx);
+ int cppi41_schedtbl_remove_dma_ch(u8 dmanum, u8 qmgr, u8 dma_ch, u8 is_tx);
+ 
+ /**
+- * cppi41_init_teardown_queue
+- */
+-void cppi41_init_teardown_queue(int dma_num);
+-
+-/**
+  * cppi41_free_teardown_queue
+  */
+ void cppi41_free_teardown_queue(int dma_num);
+-
+-/**
+- * cppi41_save_context
+- */
+-void cppi41_save_context(u8 dma_num);
+-
+-/**
+- * cppi41_restore_context
+- */
+-void cppi41_restore_context(u8 dma_num, u32 *sched_tbl);
+diff --git a/drivers/usb/musb/cppi41_dma.c b/drivers/usb/musb/cppi41_dma.c
+index 002c622..b553d49 100644
+--- a/drivers/usb/musb/cppi41_dma.c
++++ b/drivers/usb/musb/cppi41_dma.c
+@@ -35,12 +35,6 @@
+ #define USB_CPPI41_CH_NUM_PD	128	/* 4K bulk data at full speed */
+ #define USB_CPPI41_MAX_PD	(USB_CPPI41_CH_NUM_PD * (USB_CPPI41_NUM_CH+1))
+ 
+-#define USBREQ_DMA_INIT			0
+-#define USBREQ_DMA_START		1
+-#define USBREQ_DMA_INPROGRESS		2
+-#define USBREQ_DMA_COMPLETE		3
+-#define USBREQ_DMA_SHORTPKT_COMPLETE	4
+-
+ #undef DEBUG_CPPI_TD
+ #undef USBDRV_DEBUG
+ 
+@@ -106,14 +100,6 @@ struct cppi41_channel {
+ 	u8  zlp_queued;
+ 	u8  inf_mode;
+ 	u8  tx_complete;
+-	u8  rx_complete;
+-	u8  hb_mult;
+-	u8  txdma_intr_first;
+-	u8  txfifo_intr_enable;
+-	u8  count;
+-	u8  txfifo_intr_first;
+-	u8  xfer_state;
+-	struct usb_pkt_desc *curr_pd;
+ };
+ 
+ /**
+@@ -129,7 +115,6 @@ struct cppi41 {
+ 	struct cppi41_channel tx_cppi_ch[USB_CPPI41_NUM_CH];
+ 	struct cppi41_channel rx_cppi_ch[USB_CPPI41_NUM_CH];
+ 	struct work_struct      txdma_work;
+-	struct work_struct      rxdma_work;
+ 
+ 	struct usb_pkt_desc *pd_pool_head; /* Free PD pool head */
+ 	dma_addr_t pd_mem_phys;		/* PD memory physical address */
+@@ -145,14 +130,11 @@ struct cppi41 {
+ 	u32 automode_reg_offs;		/* USB_AUTOREQ_REG offset */
+ 	u32 teardown_reg_offs;		/* USB_TEARDOWN_REG offset */
+ 	u32 bd_size;
+-	u8  txfifo_intr_enable;		/* txfifo empty interrupt logic */
+-	u8  tx_isoc_sched_enable;
++	u8  inf_mode;
+ };
+ 
+ struct usb_cppi41_info usb_cppi41_info[2];
+ EXPORT_SYMBOL(usb_cppi41_info);
+-static void rxdma_completion_work(struct work_struct *data);
+-static void usb_process_tx_queue(struct cppi41 *cppi, unsigned index);
+ 
+ #ifdef DEBUG_CPPI_TD
+ static void print_pd_list(struct usb_pkt_desc *pd_pool_head)
+@@ -171,20 +153,6 @@ static void print_pd_list(struct usb_pkt_desc *pd_pool_head)
+ }
+ #endif
+ 
+-static void musb_enable_tx_dma(struct musb_hw_ep *hw_ep)
+-{
+-	void __iomem *epio = hw_ep->regs;
+-	u16 csr;
+-
+-	csr = musb_readw(epio, MUSB_TXCSR);
+-	csr |= MUSB_TXCSR_DMAENAB | MUSB_TXCSR_DMAMODE;
+-	if (is_host_enabled(hw_ep->musb))
+-		csr |= MUSB_TXCSR_H_WZC_BITS;
+-	else
+-		csr |= MUSB_TXCSR_MODE | MUSB_TXCSR_P_WZC_BITS;
+-	musb_writew(epio, MUSB_TXCSR, csr);
+-}
+-
+ static struct usb_pkt_desc *usb_get_free_pd(struct cppi41 *cppi)
+ {
+ 	struct usb_pkt_desc *free_pd = cppi->pd_pool_head;
+@@ -604,14 +572,7 @@ static unsigned cppi41_next_tx_segment(struct cppi41_channel *tx_ch)
+ 	u16 q_mgr = cppi_info->q_mgr;
+ 	u16 tx_comp_q = cppi_info->tx_comp_q[tx_ch->ch_num];
+ 	u8 en_bd_intr = cppi->en_bd_intr;
+-	struct musb_hw_ep *hw_ep = cppi->musb->endpoints + tx_ch->end_pt->epnum;
+-	u32 residue;
+ 
+-	if (length > 128) {
+-		residue = length % tx_ch->pkt_size;
+-		if (residue <= 128)
+-			length -= residue;
+-	}
+ 	/*
+ 	 * Tx can use the generic RNDIS mode where we can probably fit this
+ 	 * transfer in one PD and one IRQ.  The only time we would NOT want
+@@ -637,20 +598,6 @@ static unsigned cppi41_next_tx_segment(struct cppi41_channel *tx_ch)
+ 	    tx_ch->ch_num, tx_ch->dma_mode ? "accelerated" : "transparent",
+ 	    pkt_size, num_pds, tx_ch->start_addr + tx_ch->curr_offset, length);
+ 
+-	/* Enable txfifo empty interrupt logic for supported platform to make
+-	 * sure last byte is transferred out of txfifo, this logic
+-	 * enabled only for isochronous transfer types. There is HW bug
+-	 * in TxFifoEmpty interrupt logic when multiple tx endpoints active
+-	 * in parallel
+-	 */
+-	if (hw_ep->xfer_type == USB_ENDPOINT_XFER_ISOC) {
+-		tx_ch->xfer_state = USBREQ_DMA_INIT;
+-		if (cppi->txfifo_intr_enable) {
+-			tx_ch->txfifo_intr_enable = 1;
+-			tx_ch->txfifo_intr_first = 0;
+-		}
+-	}
+-
+ 	for (n = 0; n < num_pds; n++) {
+ 		struct cppi41_host_pkt_desc *hw_desc;
+ 
+@@ -692,29 +639,8 @@ static unsigned cppi41_next_tx_segment(struct cppi41_channel *tx_ch)
+ 		dev_dbg(musb->controller, "TX PD %p: buf %08x, len %08x, pkt info %08x\n", curr_pd,
+ 		    hw_desc->buf_ptr, hw_desc->buf_len, hw_desc->pkt_info);
+ 
+-		/* make sure descriptor details are updated to memory*/
+-		dsb();
+-
+-		/* enable tx fifo empty interrupt */
+-		if (tx_ch->txfifo_intr_enable) {
+-			dev_dbg(musb->controller, "txs(%p %d) enable txFintr\n",
+-				curr_pd, hw_desc->orig_buf_len &
+-					~CPPI41_PKT_INTR_FLAG);
+-			txfifoempty_int_enable(cppi->musb, curr_pd->ep_num);
+-		}
+-
+ 		cppi41_queue_push(&tx_ch->queue_obj, curr_pd->dma_addr,
+ 				  USB_CPPI41_DESC_ALIGN, pkt_size);
+-
+-		if (cppi->tx_isoc_sched_enable &&
+-			hw_ep->xfer_type == USB_ENDPOINT_XFER_ISOC) {
+-			tx_ch->xfer_state = USBREQ_DMA_START;
+-			musb_enable_sof(cppi->musb);
+-			if (cppi->musb->sof_isoc_started) {
+-				tx_ch->xfer_state = USBREQ_DMA_INPROGRESS;
+-				musb_enable_tx_dma(tx_ch->end_pt);
+-			}
+-		}
+ 	}
+ 
+ 	return n;
+@@ -824,64 +750,55 @@ static unsigned cppi41_next_rx_segment(struct cppi41_channel *rx_ch)
+ 	struct cppi41_host_pkt_desc *hw_desc;
+ 	u32 length = rx_ch->length - rx_ch->curr_offset;
+ 	u32 pkt_size = rx_ch->pkt_size;
+-	u32 max_rx_transfer_size = MAX_GRNDIS_PKTSIZE;
++	u32 max_rx_transfer_size = 64 * 1024;
+ 	u32 i, n_bd , pkt_len;
+-	u8 en_bd_intr = cppi->en_bd_intr;
+-	u8 dma_mode, autoreq;
+-	u8 rx_dma_mode = cppi->cppi_info->rx_dma_mode;
+-
+-
+-	pkt_len = rx_ch->length;
+-	/*
+-	 * Rx can use the generic RNDIS mode where we can
+-	 * probably fit this transfer in one PD and one IRQ
+-	 * (or two with a short packet).
+-	 */
+-	dma_mode = USB_TRANSPARENT_MODE;
+-	autoreq = USB_AUTOREQ_ALL_BUT_EOP;
++	struct usb_gadget_driver *gadget_driver;
++	u8 en_bd_intr = cppi->en_bd_intr, mode;
+ 
+-	if (is_peripheral_enabled(cppi->musb))
+-		rx_dma_mode = USB_TRANSPARENT_MODE;
+-
+-	if (((pkt_size & 0x3f) == 0) &&
+-		rx_dma_mode == USB_GENERIC_RNDIS_MODE) {
+-			dma_mode = USB_GENERIC_RNDIS_MODE;
+-	}
+-	if (dma_mode == USB_GENERIC_RNDIS_MODE) {
+-		if (cppi->cppi_info->rx_inf_mode) {
+-			if (length >= 2 * rx_ch->pkt_size)
+-				dma_mode = USB_INFINITE_DMAMODE;
+-			else
+-				dma_mode = USB_TRANSPARENT_MODE;
+-		}
+-	}
++	if (is_peripheral_active(cppi->musb)) {
++		/* TODO: temporary fix for CDC/RNDIS which needs to be in
++		 * GENERIC_RNDIS mode. Without this RNDIS gadget taking
++		 * more then 2K ms for a 64 byte pings.
++		 */
++		gadget_driver = cppi->musb->gadget_driver;
+ 
+-	if (length < rx_ch->pkt_size)
+-		dma_mode = USB_TRANSPARENT_MODE;
++		pkt_len = rx_ch->pkt_size;
++		mode = USB_GENERIC_RNDIS_MODE;
++		if (!strcmp(gadget_driver->driver.name, "g_file_storage")) {
++			if (cppi->inf_mode && length > pkt_len) {
++				pkt_len = 0;
++				length = length - rx_ch->pkt_size;
++				cppi41_rx_ch_set_maxbufcnt(&rx_ch->dma_ch_obj,
++					DMA_CH_RX_MAX_BUF_CNT_1);
++				rx_ch->inf_mode = 1;
++			} else {
++				max_rx_transfer_size = rx_ch->pkt_size;
++				mode = USB_TRANSPARENT_MODE;
++			}
++		} else
++			if (rx_ch->length < max_rx_transfer_size)
++				pkt_len = rx_ch->length;
+ 
+-	if (dma_mode == USB_INFINITE_DMAMODE) {
+-		pkt_len = 0;
+-		length = length - rx_ch->pkt_size;
+-		cppi41_rx_ch_set_maxbufcnt(
+-			&rx_ch->dma_ch_obj,
+-			DMA_CH_RX_MAX_BUF_CNT_1);
+-			rx_ch->inf_mode = 1;
+-		dma_mode = USB_GENERIC_RNDIS_MODE;
+-		autoreq = USB_AUTOREQ_ALWAYS;
++		if (mode != USB_TRANSPARENT_MODE)
++			cppi41_set_ep_size(rx_ch, pkt_len);
++		cppi41_mode_update(rx_ch, mode);
+ 	} else {
+-		if (pkt_len > max_rx_transfer_size)
+-			pkt_len = max_rx_transfer_size;
+-	}
+-
+-	/* update cppi mode */
+-	cppi41_mode_update(rx_ch, dma_mode);
++		/*
++		 * Rx can use the generic RNDIS mode where we can
++		 * probably fit this transfer in one PD and one IRQ
++		 * (or two with a short packet).
++		 */
++		if ((pkt_size & 0x3f) == 0) {
++			cppi41_mode_update(rx_ch, USB_GENERIC_RNDIS_MODE);
++			cppi41_autoreq_update(rx_ch, USB_AUTOREQ_ALL_BUT_EOP);
+ 
+-	if (dma_mode != USB_TRANSPARENT_MODE) {
+-		if (is_host_enabled(cppi->musb))
+-			cppi41_autoreq_update(rx_ch, autoreq);
+-		cppi41_set_ep_size(rx_ch, pkt_len);
+-	} else if (is_host_enabled(cppi->musb)) {
+-		cppi41_autoreq_update(rx_ch, USB_NO_AUTOREQ);
++			pkt_size = (length > 0x10000) ? 0x10000 : length;
++			cppi41_set_ep_size(rx_ch, pkt_size);
++		} else {
++			cppi41_mode_update(rx_ch, USB_TRANSPARENT_MODE);
++			cppi41_autoreq_update(rx_ch, USB_NO_AUTOREQ);
++			max_rx_transfer_size = rx_ch->pkt_size;
++		}
+ 	}
+ 
+ 	dev_dbg(musb->controller, "RX DMA%u, %s, maxpkt %u, addr %#x, rec'd %u/%u\n",
+@@ -891,12 +808,6 @@ static unsigned cppi41_next_rx_segment(struct cppi41_channel *rx_ch)
+ 
+ 	/* calculate number of bd required */
+ 	n_bd = (length + max_rx_transfer_size - 1)/max_rx_transfer_size;
+-	if (dma_mode == USB_TRANSPARENT_MODE) {
+-		if (!rx_ch->hb_mult)
+-			max_rx_transfer_size = rx_ch->pkt_size;
+-		else
+-			max_rx_transfer_size = rx_ch->hb_mult * rx_ch->pkt_size;
+-	}
+ 
+ 	for (i = 0; i < n_bd ; ++i) {
+ 		/* Get Rx packet descriptor from the free pool */
+@@ -929,10 +840,6 @@ static unsigned cppi41_next_rx_segment(struct cppi41_channel *rx_ch)
+ 
+ 		if (en_bd_intr)
+ 			hw_desc->orig_buf_len |= CPPI41_PKT_INTR_FLAG;
+-
+-		/* make sure descriptor details are updated to memory*/
+-		dsb();
+-
+ 		/*
+ 		 * Push the free Rx packet descriptor
+ 		 * to the free descriptor/buffer queue.
+@@ -946,32 +853,10 @@ sched:
+ 	 * HCD arranged ReqPkt for the first packet.
+ 	 * We arrange it for all but the last one.
+ 	 */
+-	if (is_host_active(cppi->musb) && rx_ch->channel.actual_len &&
+-		!rx_ch->inf_mode) {
++	if (is_host_active(cppi->musb) && rx_ch->channel.actual_len) {
+ 		void __iomem *epio = rx_ch->end_pt->regs;
+ 		u16 csr = musb_readw(epio, MUSB_RXCSR);
+ 
+-		if (musb->datatog_fix) {
+-			u8 curr_toggle;
+-			curr_toggle = (csr & MUSB_RXCSR_H_DATATOGGLE) ? 1 : 0;
+-
+-			/* check if data toggle bit got out of sync */
+-			if (curr_toggle == rx_ch->end_pt->prev_toggle) {
+-				dev_dbg(musb->controller,
+-				"Data toggle same as previous (=%d) on ep%d\n",
+-					curr_toggle, rx_ch->end_pt->epnum);
+-
+-				csr |= MUSB_RXCSR_H_DATATOGGLE |
+-					MUSB_RXCSR_H_WR_DATATOGGLE;
+-				musb_writew(epio, MUSB_RXCSR, csr);
+-
+-				rx_ch->end_pt->prev_toggle = !curr_toggle;
+-			} else {
+-				rx_ch->end_pt->prev_toggle = curr_toggle;
+-			}
+-			csr = musb_readw(epio, MUSB_RXCSR);
+-		}
+-
+ 		csr |= MUSB_RXCSR_H_REQPKT | MUSB_RXCSR_H_WZC_BITS;
+ 		musb_writew(epio, MUSB_RXCSR, csr);
+ 	}
+@@ -1027,8 +912,7 @@ static int cppi41_channel_program(struct dma_channel *channel,	u16 maxpacket,
+ 	/* Set the transfer parameters, then queue up the first segment */
+ 	cppi_ch->start_addr = dma_addr;
+ 	cppi_ch->curr_offset = 0;
+-	cppi_ch->hb_mult = (maxpacket >> 11) & 0x03;
+-	cppi_ch->pkt_size = maxpacket & 0x7ff;
++	cppi_ch->pkt_size = maxpacket;
+ 	cppi_ch->length = length;
+ 	cppi_ch->transfer_mode = mode;
+ 	cppi_ch->zlp_queued = 0;
+@@ -1260,20 +1144,12 @@ static int cppi41_channel_abort(struct dma_channel *channel)
+ 	void __iomem *reg_base, *epio;
+ 	unsigned long pd_addr;
+ 	u32 csr, td_reg;
+-	u8 ch_num, ep_num, i;
+-	unsigned long flags;
++	u8 ch_num, ep_num;
+ 
+ 	cppi_ch = container_of(channel, struct cppi41_channel, channel);
+ 	ch_num = cppi_ch->ch_num;
+ 	cppi = cppi_ch->channel.private_data;
+ 	musb = cppi->musb;
+-	if (cppi->tx_isoc_sched_enable &&
+-		cppi_ch->end_pt->xfer_type == USB_ENDPOINT_XFER_ISOC) {
+-		spin_lock_irqsave(&musb->lock, flags);
+-		cppi_ch->xfer_state = USBREQ_DMA_INIT;
+-		musb_disable_sof(musb);
+-		spin_unlock_irqrestore(&musb->lock, flags);
+-	}
+ 
+ 	switch (channel->status) {
+ 	case MUSB_DMA_STATUS_BUS_ABORT:
+@@ -1304,13 +1180,6 @@ static int cppi41_channel_abort(struct dma_channel *channel)
+ 	if (cppi_ch->transmit) {
+ 		dprintk("Tx channel teardown, cppi_ch = %p\n", cppi_ch);
+ 
+-		/* disable the DMAreq before teardown */
+-		csr  = musb_readw(epio, MUSB_TXCSR);
+-		csr &= ~MUSB_TXCSR_DMAENAB;
+-		musb_writew(epio, MUSB_TXCSR, csr);
+-
+-		cppi_ch->tx_complete = 0;
+-		cppi_ch->txdma_intr_first = 0;
+ 		/* Tear down Tx DMA channel */
+ 		usb_tx_ch_teardown(cppi_ch);
+ 
+@@ -1320,52 +1189,19 @@ static int cppi41_channel_abort(struct dma_channel *channel)
+ 		musb_writel(reg_base, cppi->teardown_reg_offs, td_reg);
+ 
+ 		/* Flush FIFO of the endpoint */
+-		for (i = 0; i < 2; ++i) {
+-			csr  = musb_readw(epio, MUSB_TXCSR);
+-			if (csr & MUSB_TXCSR_TXPKTRDY) {
+-				csr |= MUSB_TXCSR_FLUSHFIFO |
+-					MUSB_TXCSR_H_WZC_BITS;
+-				musb_writew(epio, MUSB_TXCSR, csr);
+-			}
+-		}
++		csr  = musb_readw(epio, MUSB_TXCSR);
++		csr |= MUSB_TXCSR_FLUSHFIFO | MUSB_TXCSR_H_WZC_BITS;
++		musb_writew(epio, MUSB_TXCSR, csr);
++		musb_writew(epio, MUSB_TXCSR, csr);
++		cppi_ch->tx_complete = 0;
+ 	} else { /* Rx */
+ 		dprintk("Rx channel teardown, cppi_ch = %p\n", cppi_ch);
+ 
+-		cppi_ch->rx_complete = 0;
+-		/* For host, ensure ReqPkt is never set again */
+-		cppi41_autoreq_update(cppi_ch, USB_NO_AUTOREQ);
+-
+-		/* disable the DMAreq and remove reqpkt */
+-		csr  = musb_readw(epio, MUSB_RXCSR);
+-		dev_dbg(musb->controller,
+-			"before rx-teardown: rxcsr %x rxcount %x\n", csr,
+-			musb_readw(epio, MUSB_RXCOUNT));
+-		/* 250usec delay to drain to cppi dma
+-		 * pipe line */
+-		udelay(250);
+-
+-		/* For host, clear (just) ReqPkt at end of current packet(s) */
+-		if (is_host_active(cppi->musb))
+-			csr &= ~MUSB_RXCSR_H_REQPKT;
+-
+-		csr &= ~MUSB_RXCSR_DMAENAB;
+-		musb_writew(epio, MUSB_RXCSR, csr);
+-		/* wait till xdma completes last 64 bytes transfer from
+-		 * mentor fifo to internal cppi fifo and drain
+-		 * cppi dma pipe line
+-		 */
+-		udelay(250);
+-
+ 		/* Flush FIFO of the endpoint */
+ 		csr  = musb_readw(epio, MUSB_RXCSR);
+-
+-		if (csr & MUSB_RXCSR_RXPKTRDY)
+-			csr |= MUSB_RXCSR_FLUSHFIFO;
+-
+-		csr |= MUSB_RXCSR_H_WZC_BITS;
++		csr |= MUSB_RXCSR_FLUSHFIFO | MUSB_RXCSR_H_WZC_BITS;
+ 		musb_writew(epio, MUSB_RXCSR, csr);
+ 		musb_writew(epio, MUSB_RXCSR, csr);
+-		csr  = musb_readw(epio, MUSB_RXCSR);
+ 
+ 		/* Issue CPPI FIFO teardown for Rx channel */
+ 		td_reg  = musb_readl(reg_base, cppi->teardown_reg_offs);
+@@ -1384,6 +1220,22 @@ static int cppi41_channel_abort(struct dma_channel *channel)
+ 
+ 		/* For host, ensure ReqPkt is never set again */
+ 		cppi41_autoreq_update(cppi_ch, USB_NO_AUTOREQ);
++
++		/* For host, clear (just) ReqPkt at end of current packet(s) */
++		if (is_host_active(cppi->musb))
++			csr &= ~MUSB_RXCSR_H_REQPKT;
++		csr |= MUSB_RXCSR_H_WZC_BITS;
++
++		/* Clear DMA enable */
++		csr &= ~MUSB_RXCSR_DMAENAB;
++		musb_writew(epio, MUSB_RXCSR, csr);
++
++		/* Flush the FIFO of endpoint once again */
++		csr  = musb_readw(epio, MUSB_RXCSR);
++		csr |= MUSB_RXCSR_FLUSHFIFO | MUSB_RXCSR_H_WZC_BITS;
++		musb_writew(epio, MUSB_RXCSR, csr);
++
++		udelay(50);
+ 	}
+ 
+ 	/*
+@@ -1432,9 +1284,10 @@ void txdma_completion_work(struct work_struct *data)
+ 	while (1) {
+ 		for (index = 0; index < USB_CPPI41_NUM_CH; index++) {
+ 			void __iomem *epio;
+-			u16 csr, len = 0;
++			u16 csr;
+ 
+ 			tx_ch = &cppi->tx_cppi_ch[index];
++			spin_lock_irqsave(&musb->lock, flags);
+ 			if (tx_ch->tx_complete) {
+ 				/* Sometimes a EP can unregister from a DMA
+ 				 * channel while the data is still in the FIFO.
+@@ -1444,41 +1297,23 @@ void txdma_completion_work(struct work_struct *data)
+ 				 */
+ 				if (!tx_ch->end_pt) {
+ 					tx_ch->tx_complete = 0;
+-					tx_ch->count = 0;
+ 					continue;
+ 				}
+ 
+ 				epio = tx_ch->end_pt->regs;
+ 				csr = musb_readw(epio, MUSB_TXCSR);
+ 
+-				if (!tx_ch->txfifo_intr_enable &&
+-					(csr & (MUSB_TXCSR_TXPKTRDY |
+-					MUSB_TXCSR_FIFONOTEMPTY))) {
++				if (csr & (MUSB_TXCSR_TXPKTRDY |
++					MUSB_TXCSR_FIFONOTEMPTY)) {
+ 					resched = 1;
+ 				} else {
+-					if (tx_ch->count > 0) {
+-						tx_ch->count--;
+-						resched = 1;
+-						continue;
+-					}
+-
+-					len = tx_ch->length -
+-						tx_ch->curr_offset;
+-					if (len > 0) {
+-						tx_ch->tx_complete = 0;
+-						cppi41_next_tx_segment(tx_ch);
+-						continue;
+-					}
+-
+ 					tx_ch->channel.status =
+ 						MUSB_DMA_STATUS_FREE;
+ 					tx_ch->tx_complete = 0;
+-					spin_lock_irqsave(&musb->lock, flags);
+ 					musb_dma_completion(musb, index+1, 1);
+-					spin_unlock_irqrestore(&musb->lock,
+-						flags);
+ 				}
+ 			}
++			spin_unlock_irqrestore(&musb->lock, flags);
+ 
+ 			if (!resched)
+ 				cond_resched();
+@@ -1494,105 +1329,6 @@ void txdma_completion_work(struct work_struct *data)
+ 
+ }
+ 
+-void cppi41_isoc_schedular(struct musb *musb)
+-{
+-	struct cppi41 *cppi;
+-	struct cppi41_channel *tx_ch;
+-	int index;
+-
+-	cppi = container_of(musb->dma_controller, struct cppi41, controller);
+-	for (index = 0; (index < USB_CPPI41_NUM_CH); index++) {
+-		void __iomem *epio;
+-		u16 csr;
+-
+-		tx_ch = &cppi->tx_cppi_ch[index];
+-
+-		if (tx_ch->xfer_state == USBREQ_DMA_INIT ||
+-			tx_ch->xfer_state == USBREQ_DMA_INPROGRESS)
+-			continue;
+-
+-		epio = tx_ch->end_pt->regs;
+-		csr = musb_readw(epio, MUSB_TXCSR);
+-
+-		switch (tx_ch->xfer_state) {
+-
+-		case USBREQ_DMA_SHORTPKT_COMPLETE:
+-			if (cppi->musb->sof_isoc_started) {
+-				dev_dbg(musb->controller, "Invalid state"
+-				"shortpkt complete happen ep%d\n", index+1);
+-				break;
+-			}
+-
+-		case USBREQ_DMA_START:
+-			if (tx_ch->xfer_state == USBREQ_DMA_SHORTPKT_COMPLETE)
+-				tx_ch->xfer_state = USBREQ_DMA_COMPLETE;
+-			else
+-				tx_ch->xfer_state = USBREQ_DMA_INPROGRESS;
+-
+-			cppi->musb->sof_isoc_started = 1;
+-			musb_enable_tx_dma(tx_ch->end_pt);
+-			dev_dbg(musb->controller, "isoc_sched: DMA_INP ep%d\n",
+-					index+1);
+-			break;
+-
+-		case USBREQ_DMA_COMPLETE:
+-			tx_ch->channel.status = MUSB_DMA_STATUS_FREE;
+-			tx_ch->xfer_state = USBREQ_DMA_INIT;
+-			dev_dbg(musb->controller, "isoc_sched: gvbk DMA_FREE"
+-				" ep%d\n", index+1);
+-			musb_dma_completion(cppi->musb, index+1, 1);
+-			musb_disable_sof(cppi->musb);
+-			break;
+-
+-		default:
+-			dev_dbg(musb->controller, "isoc_sched: invalid state%d"
+-				" ep%d\n", tx_ch->xfer_state, index+1);
+-		}
+-	}
+-}
+-EXPORT_SYMBOL(cppi41_isoc_schedular);
+-
+-void cppi41_handle_txfifo_intr(struct musb *musb, u16 usbintr)
+-{
+-	struct cppi41 *cppi;
+-	struct cppi41_channel *tx_ch;
+-	int index;
+-
+-	cppi = container_of(musb->dma_controller, struct cppi41, controller);
+-	for (index = 0; (index < USB_CPPI41_NUM_CH) && usbintr; index++) {
+-		if (usbintr & 1) {
+-			tx_ch = &cppi->tx_cppi_ch[index];
+-			/* disable txfifo empty interupt */
+-			txfifoempty_int_disable(musb, index+1);
+-			if (!tx_ch->txfifo_intr_enable)
+-				dev_dbg(musb->controller,
+-				"Bug, wrong TxFintr ep%d\n", index+1);
+-			tx_ch->txfifo_intr_enable = 0;
+-			if (tx_ch->txdma_intr_first) {
+-				tx_ch->txdma_intr_first = 0;
+-
+-				tx_ch->channel.status =
+-					MUSB_DMA_STATUS_FREE;
+-
+-				dev_dbg(musb->controller,
+-					"txc: givback ep%d\n", index+1);
+-				musb_dma_completion(musb, index+1, 1);
+-			} else {
+-				/* sometime the TxFifoEmpty interupt comes
+-				 * first followed by dma interrupt, hence
+-				 * service dma interrupt.
+-				 */
+-				tx_ch->txfifo_intr_first = 1;
+-				dev_dbg(musb->controller,
+-					"Early TxFIntr ep%d\n", index+1);
+-				usb_process_tx_queue(cppi, index);
+-			}
+-		}
+-		usbintr = usbintr >> 1;
+-	}
+-}
+-EXPORT_SYMBOL(cppi41_handle_txfifo_intr);
+-
+ /**
+  * cppi41_dma_controller_create -
+  * instantiate an object representing DMA controller.
+@@ -1616,42 +1352,12 @@ cppi41_dma_controller_create(struct musb  *musb, void __iomem *mregs)
+ 	cppi->controller.channel_abort = cppi41_channel_abort;
+ 	cppi->cppi_info = (struct usb_cppi41_info *)&usb_cppi41_info[musb->id];;
+ 	cppi->en_bd_intr = cppi->cppi_info->bd_intr_ctrl;
+-	cppi->txfifo_intr_enable = musb->txfifo_intr_enable;
+-	cppi->tx_isoc_sched_enable = musb->tx_isoc_sched_enable;
+ 	INIT_WORK(&cppi->txdma_work, txdma_completion_work);
+-	INIT_WORK(&cppi->rxdma_work, rxdma_completion_work);
+-
+-	/*
+-	 * Extra IN token has been seen when a file is transferred from one MSC
+-	 * device to other due to xDMA IP bug when multiple masters access
+-	 * mentor controller register space.
+-	 * As a software workaround use transparent mode and correct data toggle
+-	 * when they go wrong.
+-	 * This issue is expected to be fixed in RTL version post 0xD.
+-	 * Since RTL version is not available to distinguish the fix, based on
+-	 * soc revision the rxdma generic rndis shall be enabled/disabled by
+-	 * platform driver as mentioned below
+-	 * set cppi_info->grndis_for_host_rx = 1 to enable
+-	 *			rxdma generic rndis mode
+-	 * set cppi_info->grndis_for_host_rx = 0 and
+-	 *	cppi->musb->datatog_fix = 0 to disable the rxdma generic rndis.
+-	 */
+-	if (cppi->cppi_info->rx_dma_mode == USB_GENERIC_RNDIS_MODE)
+-		cppi->musb->datatog_fix = 0;
+-	else
+-		cppi->musb->datatog_fix = 1;
+-	dev_dbg(musb->controller, "musb%d: %s cppi41 rxdma mode\n",
+-		musb->id, cppi->cppi_info->rx_dma_mode ? "generic rndis" :
+-			"transparent");
+ 
+ 	/* enable infinite mode only for ti81xx silicon rev2 */
+ 	if (cpu_is_am33xx() || cpu_is_ti816x()) {
+-		/*
+-		 * to enable inf_mode, generic rndis mode must be
+-		 * enabled. also datatog_fix must be set to zero
+-		 */
+-		cppi->cppi_info->rx_inf_mode = 0;
+ 		dev_dbg(musb->controller, "cppi41dma supports infinite mode\n");
++		cppi->inf_mode = 1;
+ 	}
+ 
+ 	return &cppi->controller;
+@@ -1693,7 +1399,6 @@ static void usb_process_tx_queue(struct cppi41 *cppi, unsigned index)
+ 		struct cppi41_channel *tx_ch;
+ 		u8 ch_num, ep_num;
+ 		u32 length;
+-		u32 sched_work = 0;
+ 
+ 		curr_pd = usb_get_pd_ptr(cppi, pd_addr);
+ 		if (curr_pd == NULL) {
+@@ -1715,22 +1420,10 @@ static void usb_process_tx_queue(struct cppi41 *cppi, unsigned index)
+ 		 */
+ 		usb_put_free_pd(cppi, curr_pd);
+ 
+-		if (cppi->tx_isoc_sched_enable &&
+-			tx_ch->end_pt->xfer_type == USB_ENDPOINT_XFER_ISOC) {
+-			if (tx_ch->xfer_state == USBREQ_DMA_INPROGRESS)
+-				tx_ch->xfer_state = USBREQ_DMA_COMPLETE;
+-			else
+-				tx_ch->xfer_state =
+-					USBREQ_DMA_SHORTPKT_COMPLETE;
+-			dev_dbg(musb->controller, "DMAIsr isoch: state %d ep%d len %d\n",
+-					tx_ch->xfer_state, ep_num, length);
+-		} else if ((tx_ch->curr_offset < tx_ch->length) ||
+-		    (tx_ch->transfer_mode && !tx_ch->zlp_queued)) {
+-			sched_work = 1;
+-		} else if (tx_ch->channel.actual_len >= tx_ch->length) {
+-			void __iomem *epio;
+-			u16 csr;
+-
++		if ((tx_ch->curr_offset < tx_ch->length) ||
++		    (tx_ch->transfer_mode && !tx_ch->zlp_queued))
++			cppi41_next_tx_segment(tx_ch);
++		else if (tx_ch->channel.actual_len >= tx_ch->length) {
+ 			/*
+ 			 * We get Tx DMA completion interrupt even when
+ 			 * data is still in FIFO and not moved out to
+@@ -1739,202 +1432,19 @@ static void usb_process_tx_queue(struct cppi41 *cppi, unsigned index)
+ 			 * USB functionality. So far, we have obsered
+ 			 * failure with iperf.
+ 			 */
+-			/* wait for tx fifo empty completion interrupt
+-			 * if enabled other wise use the workthread
+-			 * to poll fifo empty status
+-			 */
+-			epio = tx_ch->end_pt->regs;
+-			csr = musb_readw(epio, MUSB_TXCSR);
+-
+-			if (tx_ch->txfifo_intr_enable) {
+-				tx_ch->txdma_intr_first = 1;
+-				dev_dbg(musb->controller,
+-				"wait for TxF-EmptyIntr ep%d\n", ep_num);
+-			} else if (tx_ch->txfifo_intr_first) {
+-				tx_ch->txfifo_intr_first = 0;
+-				tx_ch->channel.status = MUSB_DMA_STATUS_FREE;
+-				musb_dma_completion(cppi->musb, ep_num, 1);
+-			} else {
+-				int residue;
+-				int musb_completion = 0;
+-
+-				residue = tx_ch->channel.actual_len %
+-						tx_ch->pkt_size;
+-
+-				if (is_peripheral_active(musb) &&
+-					csr & MUSB_TXCSR_TXPKTRDY) {
+-					musb_completion = 1;
+-				} else if (is_host_active(musb) &&
+-					tx_ch->pkt_size > 128 && !residue) {
+-					musb_completion = 1;
+-				} else
+-					sched_work = 1;
+-
+-				if (musb_completion) {
+-					dev_dbg(musb->controller, "txpktrdy on"
+-						" dma complete ep%d\n", ep_num);
+-					tx_ch->channel.status =
+-						MUSB_DMA_STATUS_FREE;
+-					musb_dma_completion(cppi->musb,
+-						ep_num, 1);
+-				}
+-			}
+-		}
+-		if (sched_work) {
+-			sched_work = 0;
+ 			tx_ch->tx_complete = 1;
+-			tx_ch->count = 1;
+ 			schedule_work(&cppi->txdma_work);
+ 		}
+ 	}
+ }
+ 
+-static void usb_process_rx_bd(struct cppi41 *cppi,
+-		struct usb_pkt_desc *curr_pd)
+-{
+-	u8 en_bd_intr = cppi->en_bd_intr;
+-	struct cppi41_channel *rx_ch;
+-	u8 ch_num, ep_num;
+-	struct musb *musb = cppi->musb;
+-	u32 length = 0, orig_buf_len;
+-
+-	/* Extract the data from received packet descriptor */
+-	length = curr_pd->hw_desc.desc_info & CPPI41_PKT_LEN_MASK;
+-	ch_num = curr_pd->ch_num;
+-	ep_num = curr_pd->ep_num;
+-
+-	/* the cppi41 dma will set received byte length as 1 when
+-	 * zero length packet is received, fix this dummy byte by
+-	 * setting acutal length received as zero
+-	 */
+-	if (curr_pd->hw_desc.pkt_info & CPPI41_ZLP)
+-		length = 0;
+-
+-	rx_ch = &cppi->rx_cppi_ch[ch_num];
+-	dev_dbg(musb->controller, "Rx complete: dma channel(%d) ep%d len %d\n",
+-		ch_num, ep_num, length);
+-
+-	rx_ch->channel.actual_len += length;
+-
+-	if (curr_pd->eop) {
+-		curr_pd->eop = 0;
+-		/* disable the rx dma schedular */
+-		if (is_peripheral_active(cppi->musb) &&
+-			!cppi->cppi_info->rx_inf_mode)
+-			cppi41_schedtbl_remove_dma_ch(0, 0, ch_num, 0);
+-	}
+-
+-	/*
+-	 * Return Rx PD to the software list --
+-	 * this is protected by critical section
+-	 */
+-	usb_put_free_pd(cppi, curr_pd);
+-
+-	orig_buf_len = curr_pd->hw_desc.orig_buf_len;
+-	if (en_bd_intr)
+-		orig_buf_len &= ~CPPI41_PKT_INTR_FLAG;
+-
+-	dev_dbg(musb->controller,
+-		"curr_pd=%p, len=%d, origlen=%d,rxch(alen/len)=%d/%d\n",
+-			curr_pd, length, orig_buf_len,
+-			rx_ch->channel.actual_len, rx_ch->length);
+-
+-	if (rx_ch->channel.actual_len >= rx_ch->length ||
+-		     length < orig_buf_len) {
+-
+-#if defined(CONFIG_SOC_OMAPTI81XX) || defined(CONFIG_SOC_OMAPAM33XX)
+-		struct musb_hw_ep *ep;
+-		u8 isoc, next_seg = 0;
+-
+-		/* Workaround for early rx completion of
+-		 * cppi41 dma in Generic RNDIS mode for ti81xx
+-		 */
+-		if (is_host_enabled(cppi->musb)) {
+-			u32 pkt_size = rx_ch->pkt_size;
+-			ep = cppi->musb->endpoints + ep_num;
+-			isoc = musb_readb(ep->regs, MUSB_RXTYPE);
+-			isoc = (isoc >> 4) & 0x1;
+-
+-			if (!isoc
+-				&& (rx_ch->dma_mode == USB_GENERIC_RNDIS_MODE)
+-				&& (rx_ch->channel.actual_len < rx_ch->length)
+-				&& !(rx_ch->channel.actual_len % pkt_size))
+-					next_seg = 1;
+-		}
+-		if (next_seg) {
+-			rx_ch->curr_offset = rx_ch->channel.actual_len;
+-			cppi41_next_rx_segment(rx_ch);
+-		} else
+-#endif
+-		{
+-			rx_ch->channel.status = MUSB_DMA_STATUS_FREE;
+-
+-			if (rx_ch->inf_mode) {
+-				cppi41_rx_ch_set_maxbufcnt(
+-				&rx_ch->dma_ch_obj, 0);
+-				rx_ch->inf_mode = 0;
+-			}
+-
+-			/* Rx completion routine callback */
+-			musb_dma_completion(cppi->musb, ep_num, 0);
+-		}
+-	} else {
+-			if ((rx_ch->length - rx_ch->curr_offset) > 0)
+-				cppi41_next_rx_segment(rx_ch);
+-	}
+-}
+-
+-static void rxdma_completion_work(struct work_struct *data)
+-{
+-	struct cppi41 *cppi = container_of(data, struct cppi41, rxdma_work);
+-	struct musb *musb = cppi->musb;
+-	unsigned index;
+-	u8 resched = 0;
+-	unsigned long flags, length;
+-	struct cppi41_channel *rx_ch;
+-
+-	while (1) {
+-		for (index = 0; index < USB_CPPI41_NUM_CH; index++) {
+-			rx_ch = &cppi->rx_cppi_ch[index];
+-			if (rx_ch->rx_complete) {
+-				/* Sometimes a EP can unregister from a DMA
+-				 * channel while the data is still in the FIFO.
+-				 * Probable reason a proper abort was not
+-				 * called before taking such a step.
+-				 */
+-				if (!rx_ch->curr_pd) {
+-					ERR("invalid curr_pd chnum%d\n", index);
+-					continue;
+-				}
+-
+-				length = rx_ch->curr_pd->hw_desc.desc_info &
+-						CPPI41_PKT_LEN_MASK;
+-				if (length == 0) {
+-					resched = 1;
+-					continue;
+-				}
+-				spin_lock_irqsave(&musb->lock, flags);
+-				usb_process_rx_bd(cppi, rx_ch->curr_pd);
+-				rx_ch->rx_complete = 0;
+-				rx_ch->curr_pd = 0;
+-				spin_unlock_irqrestore(&musb->lock, flags);
+-			}
+-		}
+-
+-		if (resched) {
+-			resched = 0;
+-			cond_resched();
+-		} else
+-			return ;
+-	}
+-}
+-
+ static void usb_process_rx_queue(struct cppi41 *cppi, unsigned index)
+ {
+ 	struct cppi41_queue_obj rx_queue_obj;
+ 	unsigned long pd_addr;
+ 	struct usb_cppi41_info *cppi_info = cppi->cppi_info;
+ 	struct musb *musb = cppi->musb;
++	u8 en_bd_intr = cppi->en_bd_intr;
+ 
+ 	if (cppi41_queue_init(&rx_queue_obj, cppi_info->q_mgr,
+ 			      cppi_info->rx_comp_q[index])) {
+@@ -1946,7 +1456,7 @@ static void usb_process_rx_queue(struct cppi41 *cppi, unsigned index)
+ 		struct usb_pkt_desc *curr_pd;
+ 		struct cppi41_channel *rx_ch;
+ 		u8 ch_num, ep_num;
+-		u32 length = 0, timeout = 50;
++		u32 length = 0, orig_buf_len, timeout = 50;
+ 
+ 		curr_pd = usb_get_pd_ptr(cppi, pd_addr);
+ 		if (curr_pd == NULL) {
+@@ -1967,24 +1477,79 @@ static void usb_process_rx_queue(struct cppi41 *cppi, unsigned index)
+ 			udelay(1);
+ 		}
+ 
++		if (length == 0)
++			ERR("!Race condtion: rxBD read before updated by dma");
+ 
+ 		/* Extract the data from received packet descriptor */
+ 		ch_num = curr_pd->ch_num;
+ 		ep_num = curr_pd->ep_num;
++
++		dev_dbg(musb->controller, "Rx complete: dma channel(%d) ep%d len %d timeout %d\n",
++			ch_num, ep_num, length, (50-timeout));
++
+ 		rx_ch = &cppi->rx_cppi_ch[ch_num];
++		rx_ch->channel.actual_len += length;
+ 
+-		if (length == 0) {
+-			dev_dbg(musb->controller, "!Race condtion: rxBD still not"
+-				"updated, poll rxBD update ch%d ep%d\n", ch_num,
+-				ep_num);
+-			rx_ch->rx_complete = 1;
+-			rx_ch->curr_pd = curr_pd;
+-			schedule_work(&cppi->rxdma_work);
+-			continue;
++		if (curr_pd->eop) {
++			curr_pd->eop = 0;
++			/* disable the rx dma schedular */
++			if (is_peripheral_active(cppi->musb) && !cppi->inf_mode)
++				cppi41_schedtbl_remove_dma_ch(0, 0, ch_num, 0);
+ 		}
+ 
++		/*
++		 * Return Rx PD to the software list --
++		 * this is protected by critical section
++		 */
++		usb_put_free_pd(cppi, curr_pd);
++
++		orig_buf_len = curr_pd->hw_desc.orig_buf_len;
++		if (en_bd_intr)
++			orig_buf_len &= ~CPPI41_PKT_INTR_FLAG;
++
++		if (unlikely(rx_ch->channel.actual_len >= rx_ch->length ||
++			     length < orig_buf_len)) {
++
++#if defined(CONFIG_SOC_OMAPTI81XX) || defined(CONFIG_SOC_OMAPAM33XX)
++			struct musb_hw_ep *ep;
++			u8 isoc, next_seg = 0;
+ 
+-		usb_process_rx_bd(cppi, curr_pd);
++			/* Workaround for early rx completion of
++			 * cppi41 dma in Generic RNDIS mode for ti81xx
++			 */
++			if (is_host_enabled(cppi->musb)) {
++				u32 pkt_size = rx_ch->pkt_size;
++				ep = cppi->musb->endpoints + ep_num;
++				isoc = musb_readb(ep->regs, MUSB_RXTYPE);
++				isoc = (isoc >> 4) & 0x1;
++
++				if (!isoc
++				&& (rx_ch->dma_mode == USB_GENERIC_RNDIS_MODE)
++				&& (rx_ch->channel.actual_len < rx_ch->length)
++				&& !(rx_ch->channel.actual_len % pkt_size))
++					next_seg = 1;
++			}
++			if (next_seg) {
++				rx_ch->curr_offset = rx_ch->channel.actual_len;
++				cppi41_next_rx_segment(rx_ch);
++			} else
++#endif
++			{
++				rx_ch->channel.status = MUSB_DMA_STATUS_FREE;
++
++				if (rx_ch->inf_mode) {
++					cppi41_rx_ch_set_maxbufcnt(
++					&rx_ch->dma_ch_obj, 0);
++					rx_ch->inf_mode = 0;
++				}
++				/* Rx completion routine callback */
++				musb_dma_completion(cppi->musb, ep_num, 0);
++			}
++		} else {
++			if (is_peripheral_active(cppi->musb) &&
++				((rx_ch->length - rx_ch->curr_offset) > 0))
++				cppi41_next_rx_segment(rx_ch);
++		}
+ 	}
+ }
+ 
+diff --git a/drivers/usb/musb/cppi41_dma.h b/drivers/usb/musb/cppi41_dma.h
+index 500c311..fd746c3 100644
+--- a/drivers/usb/musb/cppi41_dma.h
++++ b/drivers/usb/musb/cppi41_dma.h
+@@ -21,10 +21,6 @@
+ #define _CPPI41_DMA_H_
+ #include <plat/usb.h>
+ 
+-/* USBSS RTL versions */
+-#define USBSS_RTL_VERSION_MASK	0xF
+-#define USBSS_RTL_VERSION_D	0xD
+-
+ /**
+  * struct usb_cppi41_info - CPPI 4.1 USB implementation details
+  * @dma_block:	DMA block number
+@@ -44,9 +40,6 @@ struct usb_cppi41_info {
+ 	u16 *tx_comp_q;
+ 	u16 *rx_comp_q;
+ 	u8 bd_intr_ctrl;
+-	u8 rx_dma_mode;
+-	u8 rx_inf_mode;
+-	u32 version;
+ };
+ 
+ extern struct usb_cppi41_info usb_cppi41_info[];
+@@ -59,12 +52,4 @@ extern struct usb_cppi41_info usb_cppi41_info[];
+  */
+ void cppi41_completion(struct musb *musb, u32 rx, u32 tx);
+ 
+-/**
+- * cppi41_handle_txfifo_intr - Handles tx fifo empty interupts
+- * @musb:	the controller
+- */
+-void cppi41_handle_txfifo_intr(struct musb *musb, u16 usbintr);
+-void txfifoempty_int_enable(struct musb *musb, u8 ep_num);
+-void txfifoempty_int_disable(struct musb *musb, u8 ep_num);
+-void cppi41_isoc_schedular(struct musb *musb);
+ #endif	/* _CPPI41_DMA_H_ */
+diff --git a/drivers/usb/musb/musb_core.c b/drivers/usb/musb/musb_core.c
+index 075aa5f..86cc08d 100644
+--- a/drivers/usb/musb/musb_core.c
++++ b/drivers/usb/musb/musb_core.c
+@@ -167,10 +167,10 @@ static inline void __tusb_musb_writeb(void __iomem *addr, unsigned offset,
+ }
+ 
+ static inline u8 __musb_readb(const void __iomem *addr, unsigned offset)
+-	{ return readb(addr + offset); }
++	{ return __raw_readb(addr + offset); }
+ 
+ static inline void __musb_writeb(void __iomem *addr, unsigned offset, u8 data)
+-	{ writeb(data, addr + offset); }
++	{ __raw_writeb(data, addr + offset); }
+ 
+ static int musb_ulpi_read(struct otg_transceiver *otg, u32 offset)
+ {
+@@ -1067,7 +1067,7 @@ static void musb_shutdown(struct platform_device *pdev)
+  */
+ 
+ /* mode 0 - fits in 2KB */
+-static struct musb_fifo_cfg mode_0_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_0_cfg[] = {
+ { .hw_ep_num = 1, .style = FIFO_TX,   .maxpacket = 512, },
+ { .hw_ep_num = 1, .style = FIFO_RX,   .maxpacket = 512, },
+ { .hw_ep_num = 2, .style = FIFO_RXTX, .maxpacket = 512, },
+@@ -1076,7 +1076,7 @@ static struct musb_fifo_cfg mode_0_cfg[] = {
+ };
+ 
+ /* mode 1 - fits in 4KB */
+-static struct musb_fifo_cfg mode_1_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_1_cfg[] = {
+ { .hw_ep_num = 1, .style = FIFO_TX,   .maxpacket = 512, .mode = BUF_DOUBLE, },
+ { .hw_ep_num = 1, .style = FIFO_RX,   .maxpacket = 512, .mode = BUF_DOUBLE, },
+ { .hw_ep_num = 2, .style = FIFO_RXTX, .maxpacket = 512, .mode = BUF_DOUBLE, },
+@@ -1085,7 +1085,7 @@ static struct musb_fifo_cfg mode_1_cfg[] = {
+ };
+ 
+ /* mode 2 - fits in 4KB */
+-static struct musb_fifo_cfg mode_2_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_2_cfg[] = {
+ { .hw_ep_num = 1, .style = FIFO_TX,   .maxpacket = 512, },
+ { .hw_ep_num = 1, .style = FIFO_RX,   .maxpacket = 512, },
+ { .hw_ep_num = 2, .style = FIFO_TX,   .maxpacket = 512, },
+@@ -1095,7 +1095,7 @@ static struct musb_fifo_cfg mode_2_cfg[] = {
+ };
+ 
+ /* mode 3 - fits in 4KB */
+-static struct musb_fifo_cfg mode_3_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_3_cfg[] = {
+ { .hw_ep_num = 1, .style = FIFO_TX,   .maxpacket = 512, .mode = BUF_DOUBLE, },
+ { .hw_ep_num = 1, .style = FIFO_RX,   .maxpacket = 512, .mode = BUF_DOUBLE, },
+ { .hw_ep_num = 2, .style = FIFO_TX,   .maxpacket = 512, },
+@@ -1105,7 +1105,7 @@ static struct musb_fifo_cfg mode_3_cfg[] = {
+ };
+ 
+ /* mode 4 - fits in 16KB */
+-static struct musb_fifo_cfg mode_4_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_4_cfg[] = {
+ { .hw_ep_num =  1, .style = FIFO_TX,   .maxpacket = 512,},
+ { .hw_ep_num =  1, .style = FIFO_RX,   .maxpacket = 512,},
+ { .hw_ep_num =  2, .style = FIFO_TX,   .maxpacket = 512,},
+@@ -1137,7 +1137,7 @@ static struct musb_fifo_cfg mode_4_cfg[] = {
+ 
+ 
+ /* mode 5 - fits in 8KB */
+-static struct musb_fifo_cfg mode_5_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_5_cfg[] = {
+ { .hw_ep_num =  1, .style = FIFO_TX,   .maxpacket = 512, },
+ { .hw_ep_num =  1, .style = FIFO_RX,   .maxpacket = 512, },
+ { .hw_ep_num =  2, .style = FIFO_TX,   .maxpacket = 512, },
+@@ -1168,7 +1168,7 @@ static struct musb_fifo_cfg mode_5_cfg[] = {
+ };
+ 
+ /* mode 6 - fits in 32KB */
+-static struct musb_fifo_cfg mode_6_cfg[] = {
++static struct musb_fifo_cfg __devinitdata mode_6_cfg[] = {
+ { .hw_ep_num =  1, .style = FIFO_TX,   .maxpacket = 512, .mode = BUF_DOUBLE,},
+ { .hw_ep_num =  1, .style = FIFO_RX,   .maxpacket = 512, .mode = BUF_DOUBLE,},
+ { .hw_ep_num =  2, .style = FIFO_TX,   .maxpacket = 512, .mode = BUF_DOUBLE,},
+@@ -1275,11 +1275,11 @@ fifo_setup(struct musb *musb, struct musb_hw_ep  *hw_ep,
+ 	return offset + (maxpacket << ((c_size & MUSB_FIFOSZ_DPB) ? 1 : 0));
+ }
+ 
+-static struct musb_fifo_cfg ep0_cfg = {
++static struct musb_fifo_cfg __devinitdata ep0_cfg = {
+ 	.style = FIFO_RXTX, .maxpacket = 64,
+ };
+ 
+-int ep_config_from_table(struct musb *musb)
++static int __devinit ep_config_from_table(struct musb *musb)
+ {
+ 	const struct musb_fifo_cfg	*cfg;
+ 	unsigned		i, n;
+@@ -1370,7 +1370,6 @@ done:
+ 
+ 	return 0;
+ }
+-EXPORT_SYMBOL(ep_config_from_table);
+ 
+ /*
+  * ep_config_from_hw - when MUSB_C_DYNFIFO_DEF is false
+@@ -1427,8 +1426,6 @@ enum { MUSB_CONTROLLER_MHDRC, MUSB_CONTROLLER_HDRC, };
+  */
+ static int __devinit musb_core_init(u16 musb_type, struct musb *musb)
+ {
+-	struct device *dev = musb->controller;
+-	struct musb_hdrc_platform_data *plat = dev->platform_data;
+ 	u8 reg;
+ 	char *type;
+ 	char aInfo[90], aRevision[32], aDate[12];
+@@ -1556,26 +1553,9 @@ static int __devinit musb_core_init(u16 musb_type, struct musb *musb)
+ 			dev_dbg(musb->controller, "hw_ep %d not configured\n", i);
+ 	}
+ 
+-	if (!plat->config->mult_bulk_tx) {
+-		musb->bulk_split = 0;
+-		printk(KERN_DEBUG "%s.%d: bulk split disabled\n",
+-			musb_driver_name, musb->id);
+-	}
+-	if (!plat->config->mult_bulk_rx) {
+-		musb->bulk_combine = 0;
+-		printk(KERN_DEBUG "%s.%d: bulk combine disabled\n",
+-			musb_driver_name, musb->id);
+-	}
+-
+ 	return 0;
+ }
+ 
+-void musb_reinit(u16 musb_type, struct musb *musb)
+-{
+-	musb_core_init(musb_type ? MUSB_CONTROLLER_MHDRC
+-			: MUSB_CONTROLLER_HDRC, musb);
+-}
+-EXPORT_SYMBOL(musb_reinit);
+ /*-------------------------------------------------------------------------*/
+ 
+ #if defined(CONFIG_SOC_OMAP2430) || defined(CONFIG_SOC_OMAP3430) || \
+@@ -2078,12 +2058,12 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+ 	}
+ 	musb->nIrq = nIrq;
+ /* FIXME this handles wakeup irqs wrong */
+-	if (enable_irq_wake(nIrq) == 0)
++	if (enable_irq_wake(nIrq) == 0) {
+ 		musb->irq_wake = 1;
+-	else
++		device_init_wakeup(dev, 1);
++	} else {
+ 		musb->irq_wake = 0;
+-
+-	device_init_wakeup(dev, 1);
++	}
+ 
+ 	/* host side needs more setup */
+ 	if (is_host_enabled(musb)) {
+@@ -2116,7 +2096,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+ 		musb->xceiv->state = OTG_STATE_A_IDLE;
+ 
+ 		status = usb_add_hcd(musb_to_hcd(musb), -1, 0);
+-		device_set_wakeup_enable(dev, 0);
++
+ 		hcd->self.uses_pio_for_control = 1;
+ 		dev_dbg(musb->controller, "%s mode, status %d, devctl %02x %c\n",
+ 			"HOST", status,
+@@ -2131,7 +2111,6 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+ 		musb->xceiv->state = OTG_STATE_B_IDLE;
+ 
+ 		status = musb_gadget_setup(musb);
+-		device_set_wakeup_enable(dev, 0);
+ 
+ 		dev_dbg(musb->controller, "%s mode, status %d, dev%02x\n",
+ 			is_otg_enabled(musb) ? "OTG" : "PERIPHERAL",
+@@ -2287,7 +2266,7 @@ static int __exit musb_remove(struct platform_device *pdev)
+ 
+ #ifdef	CONFIG_PM
+ 
+-void musb_save_context(struct musb *musb)
++static void musb_save_context(struct musb *musb)
+ {
+ 	int i;
+ 	void __iomem *musb_base = musb->mregs;
+@@ -2362,9 +2341,8 @@ void musb_save_context(struct musb *musb)
+ 		}
+ 	}
+ }
+-EXPORT_SYMBOL(musb_save_context);
+ 
+-void musb_restore_context(struct musb *musb)
++static void musb_restore_context(struct musb *musb)
+ {
+ 	int i;
+ 	void __iomem *musb_base = musb->mregs;
+@@ -2444,22 +2422,24 @@ void musb_restore_context(struct musb *musb)
+ 	}
+ 	musb_writeb(musb_base, MUSB_INDEX, musb->context.index);
+ }
+-EXPORT_SYMBOL(musb_restore_context);
+ 
+ static int musb_suspend(struct device *dev)
+ {
+ 	struct musb	*musb = dev_to_musb(dev);
+ 	unsigned long	flags;
++	u8 devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
+ 	int ret = 0;
+ 
+ 	spin_lock_irqsave(&musb->lock, flags);
+ 
+-	if (is_peripheral_active(musb) && musb->is_active) {
++	if (is_peripheral_active(musb)) {
+ 		/*
+ 		 * Don't allow system suspend while peripheral mode
+ 		 * is actve and cable is connected to host.
+ 		 */
+-		return -EBUSY;
++		if ((devctl & MUSB_DEVCTL_VBUS) == MUSB_DEVCTL_VBUS
++				&& (devctl & MUSB_DEVCTL_BDEVICE))
++			ret = -EBUSY;
+ 	} else if (is_host_active(musb)) {
+ 		/* we know all the children are suspended; sometimes
+ 		 * they will even be wakeup-enabled.
+diff --git a/drivers/usb/musb/musb_core.h b/drivers/usb/musb/musb_core.h
+index c93fdc3..20fe9fe 100644
+--- a/drivers/usb/musb/musb_core.h
++++ b/drivers/usb/musb/musb_core.h
+@@ -228,11 +228,6 @@ struct musb_platform_ops {
+ 		void __iomem *);
+ 	void (*dma_controller_destroy)(struct dma_controller *);
+ 	int (*simulate_babble_intr)(struct musb *musb);
+-	void (*txfifoempty_intr_enable)(struct musb *musb, u8 ep_num);
+-	void (*txfifoempty_intr_disable)(struct musb *musb, u8 ep_num);
+-	void (*reinit)(u16 musb_type, struct musb *musb);
+-	int (*enable_sof)(struct musb *musb);
+-	int (*disable_sof)(struct musb *musb);
+ };
+ 
+ /*
+@@ -281,9 +276,6 @@ struct musb_hw_ep {
+ 	/* peripheral side */
+ 	struct musb_ep		ep_in;			/* TX */
+ 	struct musb_ep		ep_out;			/* RX */
+-
+-	u8			prev_toggle;		/* Rx */
+-	u8			xfer_type;
+ };
+ 
+ static inline struct musb_request *next_in_request(struct musb_hw_ep *hw_ep)
+@@ -472,19 +464,10 @@ struct musb {
+ 	int			first;
+ 	int			old_state;
+ 	struct	timer_list	otg_timer;
+-	u8			en_otg_timer;
+-	u8			en_otgw_timer;
+ #ifndef CONFIG_MUSB_PIO_ONLY
+ 	u64			*orig_dma_mask;
+ #endif
+ 	short			fifo_mode;
+-	u8			txfifo_intr_enable;
+-	u8			datatog_fix;
+-	u8			hw_babble_ctrl;
+-	u32			sof_enabled;
+-	u32			sof_cnt;
+-	u8			tx_isoc_sched_enable;
+-	u8			sof_isoc_started;
+ };
+ 
+ static inline struct musb *gadget_to_musb(struct usb_gadget *g)
+@@ -575,18 +558,6 @@ extern irqreturn_t musb_interrupt(struct musb *);
+ 
+ extern void musb_hnp_stop(struct musb *musb);
+ 
+-static inline void txfifoempty_int_enable(struct musb *musb, u8 ep_num)
+-{
+-	if (musb->ops->txfifoempty_intr_enable)
+-		musb->ops->txfifoempty_intr_enable(musb, ep_num);
+-}
+-
+-static inline void txfifoempty_int_disable(struct musb *musb, u8 ep_num)
+-{
+-	if (musb->ops->txfifoempty_intr_disable)
+-		musb->ops->txfifoempty_intr_disable(musb, ep_num);
+-}
+-
+ static inline void musb_platform_set_vbus(struct musb *musb, int is_on)
+ {
+ 	if (musb->ops->set_vbus)
+@@ -660,22 +631,6 @@ static inline int musb_simulate_babble_intr(struct musb *musb)
+ 	return musb->ops->simulate_babble_intr(musb);
+ }
+ 
+-static inline int musb_enable_sof(struct musb *musb)
+-{
+-	if (!musb->ops->enable_sof)
+-		return -EINVAL;
+-
+-	return musb->ops->enable_sof(musb);
+-}
+-
+-static inline int musb_disable_sof(struct musb *musb)
+-{
+-	if (!musb->ops->disable_sof)
+-		return -EINVAL;
+-
+-	return musb->ops->disable_sof(musb);
+-}
+-
+ static inline const char *get_dma_name(struct musb *musb)
+ {
+ #ifdef CONFIG_MUSB_PIO_ONLY
+@@ -693,7 +648,6 @@ static inline const char *get_dma_name(struct musb *musb)
+ 		return "?dma?";
+ #endif
+ }
+-extern void musb_reinit(u16 musb_type, struct musb *musb);
+ 
+ extern void musb_gb_work(struct work_struct *data);
+ /*-------------------------- ProcFS definitions ---------------------*/
+@@ -702,6 +656,4 @@ struct proc_dir_entry;
+ 
+ extern struct proc_dir_entry *musb_debug_create(char *name, struct musb *data);
+ extern void musb_debug_delete(char *name, struct musb *data);
+-extern void musb_save_context(struct musb *musb);
+-extern void musb_restore_context(struct musb *musb);
+ #endif	/* __MUSB_CORE_H__ */
+diff --git a/drivers/usb/musb/musb_debugfs.c b/drivers/usb/musb/musb_debugfs.c
+index c7b44aa..c902b66 100644
+--- a/drivers/usb/musb/musb_debugfs.c
++++ b/drivers/usb/musb/musb_debugfs.c
+@@ -103,7 +103,7 @@ static const struct musb_register_map musb_regmap[] = {
+ 	{  }	/* Terminating Entry */
+ };
+ 
+-static struct dentry *musb_debugfs_root[2];
++static struct dentry *musb_debugfs_root;
+ 
+ static int musb_regdump_show(struct seq_file *s, void *unused)
+ {
+@@ -203,10 +203,10 @@ static ssize_t musb_test_mode_write(struct file *file,
+ 		test = MUSB_TEST_FIFO_ACCESS;
+ 
+ 	if (!strncmp(buf, "force full-speed", 15))
+-		test = MUSB_TEST_FORCE_FS | MUSB_TEST_FORCE_HOST;
++		test = MUSB_TEST_FORCE_FS;
+ 
+ 	if (!strncmp(buf, "force high-speed", 15))
+-		test = MUSB_TEST_FORCE_HS | MUSB_TEST_FORCE_HOST;
++		test = MUSB_TEST_FORCE_HS;
+ 
+ 	if (!strncmp(buf, "test packet", 10)) {
+ 		test = MUSB_TEST_PACKET;
+@@ -223,7 +223,6 @@ static ssize_t musb_test_mode_write(struct file *file,
+ 		test = MUSB_TEST_SE0_NAK;
+ 
+ 	musb_writeb(musb->mregs, MUSB_TESTMODE, test);
+-	pr_info("%smusb%d: test-mode value %x\n", buf, musb->id, test);
+ 
+ 	return count;
+ }
+@@ -242,7 +241,7 @@ int __devinit musb_init_debugfs(struct musb *musb)
+ 	struct dentry		*file;
+ 	int			ret;
+ 
+-	root = debugfs_create_dir(dev_name(musb->controller), NULL);
++	root = debugfs_create_dir("musb", NULL);
+ 	if (IS_ERR(root)) {
+ 		ret = PTR_ERR(root);
+ 		goto err0;
+@@ -262,7 +261,7 @@ int __devinit musb_init_debugfs(struct musb *musb)
+ 		goto err1;
+ 	}
+ 
+-	musb_debugfs_root[musb->id] = root;
++	musb_debugfs_root = root;
+ 
+ 	return 0;
+ 
+@@ -275,5 +274,5 @@ err0:
+ 
+ void /* __devinit_or_exit */ musb_exit_debugfs(struct musb *musb)
+ {
+-	debugfs_remove_recursive(musb_debugfs_root[musb->id]);
++	debugfs_remove_recursive(musb_debugfs_root);
+ }
+diff --git a/drivers/usb/musb/musb_gadget.c b/drivers/usb/musb/musb_gadget.c
+index 3f19d91..305d843 100644
+--- a/drivers/usb/musb/musb_gadget.c
++++ b/drivers/usb/musb/musb_gadget.c
+@@ -410,18 +410,9 @@ static void txstate(struct musb *musb, struct musb_request *req)
+ 			if (request_size == 0)
+ 				csr &= ~(MUSB_TXCSR_DMAENAB |
+ 					MUSB_TXCSR_DMAMODE);
+-			else {
+-				csr &= ~(MUSB_TXCSR_DMAENAB |
+-					MUSB_TXCSR_DMAMODE);
+-				if (!musb->tx_isoc_sched_enable ||
+-					musb_ep->type !=
+-					USB_ENDPOINT_XFER_ISOC) {
+-					csr |= MUSB_TXCSR_DMAENAB |
+-						MUSB_TXCSR_DMAMODE |
+-						MUSB_TXCSR_MODE;
+-				}
+-			}
+-
++			else
++				csr |= MUSB_TXCSR_DMAENAB | MUSB_TXCSR_DMAMODE |
++				       MUSB_TXCSR_MODE;
+ 			musb_writew(epio, MUSB_TXCSR,
+ 				(MUSB_TXCSR_P_WZC_BITS & ~MUSB_TXCSR_P_UNDERRUN)
+ 					| csr);
+@@ -1029,7 +1020,6 @@ static int musb_gadget_enable(struct usb_ep *ep,
+ 		goto fail;
+ 	}
+ 	musb_ep->type = usb_endpoint_type(desc);
+-	hw_ep->xfer_type = musb_ep->type;
+ 
+ 	/* check direction and (later) maxpacket size against endpoint */
+ 	if (usb_endpoint_num(desc) != epnum)
+@@ -1940,7 +1930,6 @@ static int musb_gadget_start(struct usb_gadget *g,
+ 		 * ensures HdrcStart is indirectly called.
+ 		 */
+ 		retval = usb_add_hcd(musb_to_hcd(musb), -1, 0);
+-		device_set_wakeup_enable(musb->controller, 0);
+ 		if (retval < 0) {
+ 			dev_dbg(musb->controller, "add_hcd failed, %d\n", retval);
+ 			goto err2;
+@@ -2050,7 +2039,6 @@ static int musb_gadget_stop(struct usb_gadget *g,
+ 	if (!is_otg_enabled(musb))
+ 		musb_stop(musb);
+ 
+-	musb->gadget_driver = NULL;
+ 	pm_runtime_put(musb->controller);
+ 
+ 	return 0;
+diff --git a/drivers/usb/musb/musb_host.c b/drivers/usb/musb/musb_host.c
+index f4919ca..509f738 100644
+--- a/drivers/usb/musb/musb_host.c
++++ b/drivers/usb/musb/musb_host.c
+@@ -133,26 +133,25 @@ static void musb_h_tx_flush_fifo(struct musb_hw_ep *ep)
+ 	struct musb	*musb = ep->musb;
+ 	void __iomem	*epio = ep->regs;
+ 	u16		csr;
++	u16		lastcsr = 0;
+ 	int		retries = 1000;
+ 
+ 	csr = musb_readw(epio, MUSB_TXCSR);
+-	while (csr & MUSB_TXCSR_TXPKTRDY) {
+-		if (!(csr & MUSB_TXCSR_FIFONOTEMPTY))
+-			return;
+-		else
+-			dev_dbg(musb->controller,
+-				"Host TX FIFONOTEMPTY csr: %02x\n", csr);
+-
+-		csr |= MUSB_TXCSR_FLUSHFIFO;
++	while (csr & MUSB_TXCSR_FIFONOTEMPTY) {
++		if (csr != lastcsr)
++			dev_dbg(musb->controller, "Host TX FIFONOTEMPTY csr: %02x\n", csr);
++		lastcsr = csr;
++		csr = MUSB_TXCSR_FLUSHFIFO;
+ 		musb_writew(epio, MUSB_TXCSR, csr);
+ 		csr = musb_readw(epio, MUSB_TXCSR);
+-
++		if (!(csr & MUSB_TXCSR_FIFONOTEMPTY))
++			break;
+ 		if (retries-- < 1) {
+-			dev_dbg(musb->controller,
+-				"Could not flush host TX%d fifo: csr: %04x\n",
+-					ep->epnum, csr);
++			dev_dbg(musb->controller, "Could not flush host TX%d fifo: csr: %04x\n",
++				ep->epnum, csr);
+ 			return;
+ 		}
++		mdelay(1);
+ 	}
+ }
+ 
+@@ -247,7 +246,6 @@ musb_start_urb(struct musb *musb, int is_in, struct musb_qh *qh)
+ 	/* initialize software qh state */
+ 	qh->offset = 0;
+ 	qh->segsize = 0;
+-	hw_ep->xfer_type = qh->type;
+ 
+ 	/* gather right source of data */
+ 	switch (qh->type) {
+@@ -322,11 +320,8 @@ start:
+ 		if (!hw_ep->tx_channel)
+ 			musb_h_tx_start(hw_ep);
+ 		else if (is_cppi_enabled(musb) || is_cppi41_enabled(musb)
+-				|| tusb_dma_omap(musb)) {
+-			if (!musb->tx_isoc_sched_enable ||
+-				hw_ep->xfer_type != USB_ENDPOINT_XFER_ISOC)
+-				musb_h_tx_dma_start(hw_ep);
+-		}
++				|| tusb_dma_omap(musb))
++			musb_h_tx_dma_start(hw_ep);
+ 	}
+ }
+ 
+@@ -349,39 +344,18 @@ static void musb_giveback(struct musb *musb, struct urb *urb, int status)
+ static inline void musb_save_toggle(struct musb_qh *qh, int is_in,
+ 				    struct urb *urb)
+ {
+-	struct musb		*musb = qh->hw_ep->musb;
+ 	void __iomem		*epio = qh->hw_ep->regs;
+ 	u16			csr;
+-	u8			curr_toggle;
+ 
+ 	/*
+ 	 * FIXME: the current Mentor DMA code seems to have
+ 	 * problems getting toggle correct.
+ 	 */
+ 
+-	if (is_in) {
++	if (is_in)
+ 		csr = musb_readw(epio, MUSB_RXCSR) & MUSB_RXCSR_H_DATATOGGLE;
+-		if (musb->datatog_fix) {
+-			curr_toggle = csr ? 1 : 0;
+-
+-			/* check if data toggle has gone out of sync */
+-			if (is_dma_capable() && qh->hw_ep->rx_channel &&
+-				curr_toggle == qh->hw_ep->prev_toggle) {
+-				dev_dbg(musb->controller,
+-				"Data toggle same as previous (=%d) on ep%d\n",
+-					curr_toggle, qh->hw_ep->epnum);
+-
+-				csr = musb_readw(epio, MUSB_RXCSR);
+-				csr |= MUSB_RXCSR_H_DATATOGGLE |
+-					MUSB_RXCSR_H_WR_DATATOGGLE;
+-				musb_writew(epio, MUSB_RXCSR, csr);
+-
+-				csr = 1;
+-			}
+-		}
+-	} else {
++	else
+ 		csr = musb_readw(epio, MUSB_TXCSR) & MUSB_TXCSR_H_DATATOGGLE;
+-	}
+ 
+ 	usb_settoggle(urb->dev, qh->epnum, !is_in, csr ? 1 : 0);
+ }
+@@ -391,12 +365,8 @@ void musb_gb_work(struct work_struct *data)
+ 	struct musb *musb = container_of(data, struct musb, gb_work);
+ 	struct urb *urb;
+ 
+-	while ((urb = pop_queue(musb)) != 0) {
+-		if (urb->status == -EINPROGRESS)
+-			musb_giveback(musb, urb, 0);
+-		else
+-			musb_giveback(musb, urb, urb->status);
+-	}
++	while ((urb = pop_queue(musb)) != 0)
++		musb_giveback(musb, urb, 0);
+ }
+ 
+ /*
+@@ -411,6 +381,7 @@ static void musb_advance_schedule(struct musb *musb, struct urb *urb,
+ {
+ 	struct musb_qh		*qh = musb_ep_get_qh(hw_ep, is_in);
+ 	struct musb_hw_ep	*ep = qh->hw_ep;
++	int			ready = qh->is_ready;
+ 	int			status;
+ 
+ 	status = (urb->status == -EINPROGRESS) ? 0 : urb->status;
+@@ -429,26 +400,24 @@ static void musb_advance_schedule(struct musb *musb, struct urb *urb,
+ 
+ 	usb_hcd_unlink_urb_from_ep(musb_to_hcd(musb), urb);
+ 
++	/* If URB completed with error then giveback first */
++	if (status != 0) {
++		qh->is_ready = 0;
++		spin_unlock(&musb->lock);
++		musb_giveback(musb, urb, status);
++		spin_lock(&musb->lock);
++		qh->is_ready = ready;
++	}
+ 	/* reclaim resources (and bandwidth) ASAP; deschedule it, and
+ 	 * invalidate qh as soon as list_empty(&hep->urb_list)
+ 	 */
+ 	if (list_empty(&qh->hep->urb_list)) {
+ 		struct list_head	*head;
+-		struct dma_controller	*dma = musb->dma_controller;
+ 
+-		if (is_in) {
++		if (is_in)
+ 			ep->rx_reinit = 1;
+-			if (ep->rx_channel) {
+-				dma->channel_release(ep->rx_channel);
+-				ep->rx_channel = NULL;
+-			}
+-		} else {
++		else
+ 			ep->tx_reinit = 1;
+-			if (ep->tx_channel) {
+-				dma->channel_release(ep->tx_channel);
+-				ep->tx_channel = NULL;
+-			}
+-		}
+ 
+ 		/* Clobber old pointers to this qh */
+ 		musb_ep_set_qh(ep, is_in, NULL);
+@@ -481,29 +450,17 @@ static void musb_advance_schedule(struct musb *musb, struct urb *urb,
+ 		}
+ 	}
+ 
+-	/* we should not start next urb when current urb
+-	 * has failed, this is because stack will unlink/dequeue
+-	 * remaining urbs. Programming the next urb will endup in
+-	 * urb completion because of expected error (cause of current
+-	 * urb failure) interrupts and interfere with urb dequeue
+-	 * initiated by stack and cause a crash.
+-	 */
+-	if (status == 0 && qh != NULL && qh->is_ready) {
++	if (qh != NULL && qh->is_ready) {
+ 		dev_dbg(musb->controller, "... next ep%d %cX urb %p\n",
+ 		    hw_ep->epnum, is_in ? 'R' : 'T', next_urb(qh));
+ 		musb_start_urb(musb, is_in, qh);
+ 	}
+ 
+-	/* if we had set the status as -ECANCELED for dequeued URBs
+-	 * now the status has to be changed to -EINPROGRESS
+-	 * stack/application will not like -ECANCELED status
+-	 */
+-	if (urb->status == -ECANCELED)
+-		urb->status = -EINPROGRESS;
+-
+ 	/* if URB is successfully completed then giveback in workqueue */
+-	push_queue(musb, urb);
+-	queue_work(musb->gb_queue, &musb->gb_work);
++	if (status == 0) {
++		push_queue(musb, urb);
++		queue_work(musb->gb_queue, &musb->gb_work);
++	}
+ }
+ 
+ static u16 musb_h_flush_rxfifo(struct musb_hw_ep *hw_ep, u16 csr)
+@@ -512,8 +469,7 @@ static u16 musb_h_flush_rxfifo(struct musb_hw_ep *hw_ep, u16 csr)
+ 	 * ignore dma (various models),
+ 	 * leave toggle alone (may not have been saved yet)
+ 	 */
+-	if (csr & MUSB_RXCSR_RXPKTRDY)
+-		csr |= MUSB_RXCSR_FLUSHFIFO | MUSB_RXCSR_RXPKTRDY;
++	csr |= MUSB_RXCSR_FLUSHFIFO | MUSB_RXCSR_RXPKTRDY;
+ 	csr &= ~(MUSB_RXCSR_H_REQPKT
+ 		| MUSB_RXCSR_H_AUTOREQ
+ 		| MUSB_RXCSR_AUTOCLEAR);
+@@ -744,8 +700,7 @@ static bool musb_tx_dma_program(struct dma_controller *dma,
+ 	 */
+ 	wmb();
+ 
+-	if (!dma->channel_program(channel, pkt_size |
+-			(qh->hb_mult << 11), mode,
++	if (!dma->channel_program(channel, pkt_size, mode,
+ 			urb->transfer_dma + offset, length)) {
+ 		dma->channel_release(channel);
+ 		hw_ep->tx_channel = NULL;
+@@ -774,8 +729,6 @@ static void musb_ep_program(struct musb *musb, u8 epnum,
+ 	void __iomem		*epio = hw_ep->regs;
+ 	struct musb_qh		*qh = musb_ep_get_qh(hw_ep, !is_out);
+ 	u16			packet_sz = qh->maxpacket;
+-	u8			use_dma = 1;
+-	u16			csr;
+ 
+ 	dev_dbg(musb->controller, "%s hw%d urb %p spd%d dev%d ep%d%s "
+ 				"h_addr%02x h_port%02x bytes %d\n",
+@@ -787,17 +740,9 @@ static void musb_ep_program(struct musb *musb, u8 epnum,
+ 
+ 	musb_ep_select(musb, mbase, epnum);
+ 
+-	if (is_out && !len) {
+-		use_dma = 0;
+-		csr = musb_readw(epio, MUSB_TXCSR);
+-		csr &= ~MUSB_TXCSR_DMAENAB;
+-		musb_writew(epio, MUSB_TXCSR, csr);
+-		hw_ep->tx_channel = NULL;
+-	}
+-
+ 	/* candidate for DMA? */
+ 	dma_controller = musb->dma_controller;
+-	if (use_dma && is_dma_capable() && epnum && dma_controller) {
++	if (is_dma_capable() && epnum && dma_controller) {
+ 		dma_channel = is_out ? hw_ep->tx_channel : hw_ep->rx_channel;
+ 		if (!dma_channel) {
+ 			dma_channel = dma_controller->channel_alloc(
+@@ -880,8 +825,9 @@ static void musb_ep_program(struct musb *musb, u8 epnum,
+ 					| ((hw_ep->max_packet_sz_tx /
+ 						packet_sz) - 1) << 11);
+ 			else
+-				musb_writew(epio, MUSB_TXMAXP, qh->maxpacket |
+-						(qh->hb_mult << 11));
++				musb_writew(epio, MUSB_TXMAXP,
++						qh->maxpacket |
++						((qh->hb_mult - 1) << 11));
+ 			musb_writeb(epio, MUSB_TXINTERVAL, qh->intv_reg);
+ 		} else {
+ 			musb_writeb(epio, MUSB_NAKLIMIT0, qh->intv_reg);
+@@ -950,23 +896,12 @@ static void musb_ep_program(struct musb *musb, u8 epnum,
+ 			musb_writew(hw_ep->regs, MUSB_RXCSR, csr);
+ 			csr = musb_readw(hw_ep->regs, MUSB_RXCSR);
+ 
+-			if (musb->datatog_fix) {
+-				/*
+-				 * Save the data toggle value which can be
+-				 * compared later to see if data toggle goes
+-				 * out of sync
+-				 */
+-				hw_ep->prev_toggle = (csr &
+-					MUSB_RXCSR_H_DATATOGGLE) ? 1 : 0;
+-			}
+-
+ 			/*
+ 			 * Unless caller treats short RX transfers as
+ 			 * errors, we dare not queue multiple transfers.
+ 			 */
+ 			dma_ok = dma_controller->channel_program(dma_channel,
+-					packet_sz | (qh->hb_mult << 11),
+-					 !(urb->transfer_flags &
++					packet_sz, !(urb->transfer_flags &
+ 						     URB_SHORT_NOT_OK),
+ 					urb->transfer_dma + offset,
+ 					qh->segsize);
+@@ -1487,12 +1422,8 @@ void musb_host_tx(struct musb *musb, u8 epnum)
+ 		if (musb_tx_dma_program(musb->dma_controller, hw_ep, qh, urb,
+ 				offset, length)) {
+ 			if (is_cppi_enabled(musb) || is_cppi41_enabled(musb) ||
+-					tusb_dma_omap(musb)) {
+-				if (!musb->tx_isoc_sched_enable ||
+-					hw_ep->xfer_type !=
+-					USB_ENDPOINT_XFER_ISOC)
+-					musb_h_tx_dma_start(hw_ep);
+-			}
++					tusb_dma_omap(musb))
++				musb_h_tx_dma_start(hw_ep);
+ 			return;
+ 		}
+ 	} else	if (tx_csr & MUSB_TXCSR_DMAENAB) {
+@@ -1740,8 +1671,7 @@ void musb_host_rx(struct musb *musb, u8 epnum)
+ 				length =
+ 					urb->iso_frame_desc[qh->iso_idx].length;
+ 
+-				ret = c->channel_program(dma, qh->maxpacket |
+-						(qh->hb_mult << 11),
++				ret = c->channel_program(dma, qh->maxpacket,
+ 						0, (u32) buf, length);
+ 				done = false;
+ 			} else {
+@@ -1887,7 +1817,7 @@ void musb_host_rx(struct musb *musb, u8 epnum)
+ 			 * adjusted first...
+ 			 */
+ 			ret = c->channel_program(
+-				dma, qh->maxpacket | ((qh->hb_mult - 1) << 11),
++				dma, qh->maxpacket,
+ 				dma->desired_mode, buf, length);
+ 
+ 			if (!ret) {
+@@ -1911,25 +1841,8 @@ finish:
+ 	urb->actual_length += xfer_len;
+ 	qh->offset += xfer_len;
+ 	if (done) {
+-		/* Reset this dma ->actual_len after transfer complete,
+-		 * if not subsequence dequeue request will take this
+-		 */
+-		if (dma)
+-			dma->actual_len = 0;
+-
+-		if (urb->status == -EINPROGRESS) {
+-			/* If short packet is not expected any transfer length
+-			 * less than actual length is an error, hence
+-			 * set urb status to -EREMOTEIO
+-			 */
+-			if ((urb->status == -EINPROGRESS)
+-				&& (urb->transfer_flags & URB_SHORT_NOT_OK)
+-				&& (urb->actual_length
+-					< urb->transfer_buffer_length))
+-				urb->status = -EREMOTEIO;
+-			else
+-				urb->status = status;
+-		}
++		if (urb->status == -EINPROGRESS)
++			urb->status = status;
+ 		musb_advance_schedule(musb, urb, hw_ep, USB_DIR_IN);
+ 	}
+ }
+@@ -2274,7 +2187,7 @@ static int musb_cleanup_urb(struct urb *urb, struct musb_qh *qh)
+ 	}
+ 
+ 	/* turn off DMA requests, discard state, stop polling ... */
+-	if (is_in && ep->epnum) {
++	if (is_in) {
+ 		/* giveback saves bulk toggle */
+ 		csr = musb_h_flush_rxfifo(ep, 0);
+ 
+@@ -2299,14 +2212,8 @@ static int musb_cleanup_urb(struct urb *urb, struct musb_qh *qh)
+ 	} else  {
+ 		musb_h_ep0_flush_fifo(ep);
+ 	}
+-
+-	if (status == 0) {
+-		/* As this urb is dequeued by stack/application
+-		 * we return this urb with ECANCELED status
+-		 */
+-		urb->status = -ECANCELED;
++	if (status == 0)
+ 		musb_advance_schedule(ep->musb, urb, ep, is_in);
+-	}
+ 	return status;
+ }
+ 
+@@ -2461,6 +2368,14 @@ static int musb_bus_suspend(struct usb_hcd *hcd)
+ 	struct musb	*musb = hcd_to_musb(hcd);
+ 	u8		devctl;
+ 
++	if (!is_otg_enabled(musb) && is_host_enabled(musb)) {
++		devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
++		devctl &= MUSB_DEVCTL_SESSION;
++		musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
++		musb->is_active = 0;
++		return 0;
++	}
++
+ 	if (!is_host_active(musb))
+ 		return 0;
+ 
+@@ -2490,6 +2405,18 @@ static int musb_bus_suspend(struct usb_hcd *hcd)
+ 
+ static int musb_bus_resume(struct usb_hcd *hcd)
+ {
++	struct musb	*musb = hcd_to_musb(hcd);
++	u8		devctl;
++
++	if (!is_otg_enabled(musb) && is_host_enabled(musb)) {
++		devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
++		devctl |= MUSB_DEVCTL_SESSION;
++		musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
++		musb->is_active = 1;
++		return 0;
++	}
++
++	/* resuming child port does the work */
+ 	return 0;
+ }
+ 
+diff --git a/drivers/usb/musb/musb_io.h b/drivers/usb/musb/musb_io.h
+index af554fe..dced1c6 100644
+--- a/drivers/usb/musb/musb_io.h
++++ b/drivers/usb/musb/musb_io.h
+@@ -61,17 +61,17 @@ static inline void writesb(const void __iomem *addr, const void *buf, int len)
+ /* NOTE:  these offsets are all in bytes */
+ 
+ static inline u16 musb_readw(const void __iomem *addr, unsigned offset)
+-	{ return readw(addr + offset); }
++	{ return __raw_readw(addr + offset); }
+ 
+ static inline u32 musb_readl(const void __iomem *addr, unsigned offset)
+-	{ return readl(addr + offset); }
++	{ return __raw_readl(addr + offset); }
+ 
+ 
+ static inline void musb_writew(void __iomem *addr, unsigned offset, u16 data)
+-	{ writew(data, addr + offset); }
++	{ __raw_writew(data, addr + offset); }
+ 
+ static inline void musb_writel(void __iomem *addr, unsigned offset, u32 data)
+-	{ writel(data, addr + offset); }
++	{ __raw_writel(data, addr + offset); }
+ 
+ #else
+ 
+diff --git a/drivers/usb/musb/musb_procfs.c b/drivers/usb/musb/musb_procfs.c
+index 2db7eac..16f01e5 100644
+--- a/drivers/usb/musb/musb_procfs.c
++++ b/drivers/usb/musb/musb_procfs.c
+@@ -514,7 +514,7 @@ static int dump_header_stats(struct musb *musb, char *buffer)
+ 			"\n",
+ 			musb_readl(musb->ctrl_base, DAVINCI_USB_CTRL_REG),
+ 			musb_readl(musb->ctrl_base, DAVINCI_USB_STAT_REG),
+-			readl((void __force __iomem *)
++			__raw_readl((void __force __iomem *)
+ 					IO_ADDRESS(USBPHY_CTL_PADDR)),
+ 			musb_readl(musb->ctrl_base, DAVINCI_RNDIS_REG),
+ 			musb_readl(musb->ctrl_base, DAVINCI_AUTOREQ_REG),
+@@ -719,7 +719,6 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
+ 		INFO("T: start sending TEST_PACKET\n");
+ 		INFO("D: set/read dbug level\n");
+ 		INFO("K/k: enable/disable babble workaround\n");
+-		INFO("b: generate software babble interrupt\n");
+ 		break;
+ 
+ 	default:
+diff --git a/drivers/usb/musb/musb_regs.h b/drivers/usb/musb/musb_regs.h
+index 044ecdc..b222c08 100644
+--- a/drivers/usb/musb/musb_regs.h
++++ b/drivers/usb/musb/musb_regs.h
+@@ -202,12 +202,6 @@
+ #define MUSB_RXCSR_H_REQPKT		0x0020
+ #define MUSB_RXCSR_H_ERROR		0x0004
+ 
+-/* MISC control register offs 0x61 */
+-#define MUSB_MISC_FORCE_TXIDLE		0x80
+-#define MUSB_MISC_SW_SESSION_CTRL	0x40
+-#define MUSB_MISC_STUCK_J		0x20
+-#define MUSB_MISC_RCV_DISABLE		0x04
+-
+ /* RXCSR bits to avoid zeroing (write zero clears, write 1 ignored) */
+ #define MUSB_RXCSR_P_WZC_BITS	\
+ 	(MUSB_RXCSR_P_SENTSTALL | MUSB_RXCSR_P_OVERRUN \
+@@ -248,7 +242,6 @@
+  */
+ 
+ #define MUSB_DEVCTL		0x60	/* 8 bit */
+-#define MUSB_MISC		0x61	/* 8 bit babble control bits */
+ 
+ /* These are always controlled through the INDEX register */
+ #define MUSB_TXFIFOSZ		0x62	/* 8-bit (see masks) */
+@@ -291,7 +284,6 @@
+ #define MUSB_FIFOSIZE		0x0F
+ #define MUSB_CONFIGDATA		MUSB_FIFOSIZE	/* Re-used for EP0 */
+ 
+-
+ #if 0
+ /* Offsets to endpoint registers in indexed model (using INDEX register) */
+ #define MUSB_INDEXED_OFFSET(_musb, _epnum, _offset)	\
+diff --git a/drivers/usb/musb/ti81xx.c b/drivers/usb/musb/ti81xx.c
+index 6f2b170..2b5c701 100644
+--- a/drivers/usb/musb/ti81xx.c
++++ b/drivers/usb/musb/ti81xx.c
+@@ -27,6 +27,7 @@
+  */
+ 
+ #include <linux/init.h>
++#include <linux/clk.h>
+ #include <linux/io.h>
+ #include <linux/usb/otg.h>
+ #include <linux/platform_device.h>
+@@ -39,67 +40,15 @@
+ #include "musb_core.h"
+ #include "cppi41_dma.h"
+ 
+-#ifdef CONFIG_PM
+-struct ti81xx_usbss_regs {
+-	u32	sysconfig;
+-
+-	u32	irq_en_set;
+-
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	u32	irq_dma_th_tx0[4];
+-	u32	irq_dma_th_rx0[4];
+-	u32	irq_dma_th_tx1[4];
+-	u32	irq_dma_th_rx1[4];
+-	u32	irq_dma_en[2];
+-
+-	u32	irq_frame_th_tx0[4];
+-	u32	irq_frame_th_rx0[4];
+-	u32	irq_frame_th_tx1[4];
+-	u32	irq_frame_th_rx1[4];
+-	u32	irq_frame_en[2];
+-#endif
+-};
+-
+-struct ti81xx_usb_regs {
+-	u32	control;
+-
+-	u32	irq_en_set[2];
+-
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	u32	tx_mode;
+-	u32	rx_mode;
+-	u32	grndis_size[15];
+-	u32	auto_req;
+-	u32	teardn;
+-	u32	th_xdma_idle;
+-#endif
+-	u32	srp_fix;
+-	u32	phy_utmi;
+-	u32	mgc_utmi_loopback;
+-	u32	mode;
+-};
+-#endif
+-
+-#define BABBLE_WORKAROUND_1 0
+-#define BABBLE_WORKAROUND_2 1
+-#define BABBLE_WORKAROUND_3 2
+-
+-#define BABBLE_WORKAROUND (BABBLE_WORKAROUND_2)
+-
+ struct ti81xx_glue {
+ 	struct device *dev;
++	struct clk *ick;		/* common usbss interface clk */
++	struct clk *fck;		/* common usbss functional clk */
+ 	struct resource *mem_pa;	/* usbss memory resource */
+ 	void *mem_va;			/* ioremapped virtual address */
+ 	struct platform_device *musb[2];/* child musb pdevs */
+ 	u8	irq;			/* usbss irq */
+-	u8	first;			/* ignore first call of resume */
+-
+-#ifdef CONFIG_PM
+-	struct ti81xx_usbss_regs usbss_regs;
+-	struct ti81xx_usb_regs usb_regs[2];
+-#endif
+ };
+-
+ static u64 musb_dmamask = DMA_BIT_MASK(32);
+ static void *usbss_virt_base;
+ static u8 usbss_init_done;
+@@ -128,24 +77,27 @@ static inline u32 usbss_read(u32 offset)
+ {
+ 	if (!usbss_init_done)
+ 		return 0;
+-	return readl(usbss_virt_base + offset);
++	return __raw_readl(usbss_virt_base + offset);
+ }
+ 
+ static inline void usbss_write(u32 offset, u32 data)
+ {
+ 	if (!usbss_init_done)
+ 		return ;
+-	writel(data, usbss_virt_base + offset);
++	__raw_writel(data, usbss_virt_base + offset);
+ }
+ 
+ static void usbotg_ss_init(void)
+ {
+ 	if (!usbss_init_done) {
+-		usbss_init_done = 1;
++		/* reset the usbss for usb0/usb1 */
++		usbss_write(USBSS_SYSCONFIG,
++			usbss_read(USBSS_SYSCONFIG) | USB_SOFT_RESET_MASK);
+ 
+ 		/* clear any USBSS interrupts */
+ 		usbss_write(USBSS_IRQ_EOI, 0);
+ 		usbss_write(USBSS_IRQ_STATUS, usbss_read(USBSS_IRQ_STATUS));
++		usbss_init_done = 1;
+ 	}
+ }
+ static void usbotg_ss_uninit(void)
+@@ -212,7 +164,7 @@ u16 ti81xx_musb_readw(const void __iomem *addr, unsigned offset)
+ 	u32 tmp;
+ 	u16 val;
+ 
+-	tmp = readl(addr + (offset & ~3));
++	tmp = __raw_readl(addr + (offset & ~3));
+ 
+ 	switch (offset & 0x3) {
+ 	case 0:
+@@ -240,7 +192,7 @@ u8 ti81xx_musb_readb(const void __iomem *addr, unsigned offset)
+ 	u32 tmp;
+ 	u8 val;
+ 
+-	tmp = readl(addr + (offset & ~3));
++	tmp = __raw_readl(addr + (offset & ~3));
+ 
+ 	switch (offset & 0x3) {
+ 	case 0:
+@@ -473,7 +425,6 @@ int __devinit cppi41_init(u8 id, u8 irq, int num_instances)
+ 	cppi_info->tx_comp_q = id ? tx_comp_q1 : tx_comp_q;
+ 	cppi_info->rx_comp_q = id ? rx_comp_q1 : rx_comp_q;
+ 	cppi_info->bd_intr_ctrl = 1;
+-	cppi_info->version = usbss_read(USBSS_REVISION);
+ 
+ 	if (cppi41_init_done)
+ 		return 0;
+@@ -574,6 +525,7 @@ int cppi41_enable_sched_rx(void)
+ 	cppi41_dma_sched_tbl_init(0, 0, dma_sched_table, 30);
+ 	return 0;
+ }
++#endif /* CONFIG_USB_TI_CPPI41_DMA */
+ 
+ /*
+  * Because we don't set CTRL.UINT, it's "important" to:
+@@ -582,71 +534,6 @@ int cppi41_enable_sched_rx(void)
+  *	- use INTSET/INTCLR instead.
+  */
+ 
+-void txfifoempty_intr_enable(struct musb *musb, u8 ep_num)
+-{
+-	void __iomem *reg_base = musb->ctrl_base;
+-	u32 coremask;
+-
+-	if (musb->txfifo_intr_enable) {
+-		coremask = musb_readl(reg_base, USB_CORE_INTR_SET_REG);
+-		coremask |= (1 << (ep_num + 16));
+-		musb_writel(reg_base, USB_CORE_INTR_SET_REG, coremask);
+-		dev_dbg(musb->controller, "enable txF intr ep%d coremask %x\n",
+-			ep_num, coremask);
+-	}
+-}
+-
+-void txfifoempty_intr_disable(struct musb *musb, u8 ep_num)
+-{
+-	void __iomem *reg_base = musb->ctrl_base;
+-	u32 coremask;
+-
+-	if (musb->txfifo_intr_enable) {
+-		coremask = (1 << (ep_num + 16));
+-		musb_writel(reg_base, USB_CORE_INTR_CLEAR_REG, coremask);
+-	}
+-}
+-
+-#endif /* CONFIG_USB_TI_CPPI41_DMA */
+-
+-int ti81xx_musb_enable_sof(struct musb *musb)
+-{
+-	void __iomem *reg_base = musb->ctrl_base;
+-
+-	if (musb->sof_enabled) {
+-		musb->sof_enabled++;
+-		return musb->sof_enabled;
+-	}
+-
+-	musb->sof_enabled = 1;
+-	musb_writeb(musb->mregs, MUSB_INTRUSBE, MUSB_INTR_SOF |
+-		musb_readb(musb->mregs, MUSB_INTRUSBE));
+-	musb_writel(reg_base, USB_CORE_INTR_SET_REG, MUSB_INTR_SOF |
+-		musb_readl(reg_base, USB_CORE_INTR_SET_REG));
+-
+-	return musb->sof_enabled;
+-}
+-
+-int ti81xx_musb_disable_sof(struct musb *musb)
+-{
+-	void __iomem *reg_base = musb->ctrl_base;
+-	u8 intrusb;
+-
+-	if (musb->sof_enabled)
+-		musb->sof_enabled--;
+-
+-	if (musb->sof_enabled)
+-		return musb->sof_enabled;
+-
+-	intrusb = musb_readb(musb->mregs, MUSB_INTRUSBE);
+-	intrusb &= ~MUSB_INTR_SOF;
+-	musb_writeb(musb->mregs, MUSB_INTRUSBE, intrusb);
+-	musb_writel(reg_base, USB_CORE_INTR_CLEAR_REG, MUSB_INTR_SOF);
+-	musb->sof_enabled = 0;
+-
+-	return 0;
+-}
+-
+ /**
+  * ti81xx_musb_enable - enable interrupts
+  */
+@@ -718,12 +605,6 @@ static void otg_timer(unsigned long _musb)
+ 		}
+ 		break;
+ 	case OTG_STATE_A_WAIT_VFALL:
+-		if (!(devctl & MUSB_DEVCTL_SESSION)) {
+-			devctl |= MUSB_DEVCTL_SESSION;
+-			musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
+-
+-			devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
+-		}
+ 		/*
+ 		 * Wait till VBUS falls below SessionEnd (~0.2 V); the 1.3
+ 		 * RTL seems to mis-handle session "start" otherwise (or in
+@@ -736,7 +617,7 @@ static void otg_timer(unsigned long _musb)
+ 			break;
+ 		}
+ 		musb->xceiv->state = OTG_STATE_A_WAIT_VRISE;
+-		musb_writel(musb->ctrl_base, USB_IRQ_STATUS_RAW_1,
++		musb_writel(musb->ctrl_base, USB_CORE_INTR_SET_REG,
+ 			    MUSB_INTR_VBUSERROR << USB_INTR_USB_SHIFT);
+ 		break;
+ 	case OTG_STATE_B_IDLE:
+@@ -758,24 +639,12 @@ static void otg_timer(unsigned long _musb)
+ 		devctl = musb_readb(mregs, MUSB_DEVCTL);
+ 		if (devctl & MUSB_DEVCTL_HM) {
+ 			musb->xceiv->state = OTG_STATE_A_IDLE;
+-			break;
++		} else {
++			mod_timer(&musb->otg_workaround,
++					jiffies + POLL_SECONDS * HZ);
++			musb_writeb(musb->mregs, MUSB_DEVCTL, devctl |
++				MUSB_DEVCTL_SESSION);
+ 		}
+-
+-		/* don't toggle SESSION flag if VBUS presents - connected
+-		 * to Host already
+-		 */
+-		if ((devctl & MUSB_DEVCTL_VBUS) == MUSB_DEVCTL_VBUS)
+-			break;
+-
+-		if ((devctl & MUSB_DEVCTL_SESSION) &&
+-				!(devctl & MUSB_DEVCTL_BDEVICE))
+-			devctl &= ~MUSB_DEVCTL_SESSION;
+-		else
+-			devctl |= MUSB_DEVCTL_SESSION;
+-
+-		mod_timer(&musb->otg_workaround,
+-				jiffies + POLL_SECONDS * HZ);
+-		musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
+ 		break;
+ 	default:
+ 		break;
+@@ -817,6 +686,7 @@ void ti81xx_musb_try_idle(struct musb *musb, unsigned long timeout)
+ #ifdef CONFIG_USB_TI_CPPI41_DMA
+ static irqreturn_t cppi41dma_Interrupt(int irq, void *hci)
+ {
++	struct musb  *musb = hci;
+ 	u32 intr_status;
+ 	irqreturn_t ret = IRQ_NONE;
+ 	u32 q_cmpl_status_0, q_cmpl_status_1, q_cmpl_status_2;
+@@ -825,6 +695,7 @@ static irqreturn_t cppi41dma_Interrupt(int irq, void *hci)
+ 	void *q_mgr_base = cppi41_queue_mgr[0].q_mgr_rgn_base;
+ 	unsigned long flags;
+ 
++	musb = hci;
+ 	/*
+ 	 * CPPI 4.1 interrupts share the same IRQ and the EOI register but
+ 	 * don't get reflected in the interrupt source/mask registers.
+@@ -859,9 +730,9 @@ static irqreturn_t cppi41dma_Interrupt(int irq, void *hci)
+ 
+ 	/* get proper musb handle based usb0/usb1 ctrl-id */
+ 
++	dev_dbg(musb->controller, "CPPI 4.1 IRQ: Tx %x, Rx %x\n", usb0_tx_intr,
++				usb0_rx_intr);
+ 	if (gmusb[0] && (usb0_tx_intr || usb0_rx_intr)) {
+-		dev_dbg(gmusb[0]->controller, "CPPI 4.1 IRQ: Tx %x, Rx %x\n",
+-			usb0_tx_intr, usb0_rx_intr);
+ 		spin_lock_irqsave(&gmusb[0]->lock, flags);
+ 		cppi41_completion(gmusb[0], usb0_rx_intr,
+ 					usb0_tx_intr);
+@@ -869,9 +740,9 @@ static irqreturn_t cppi41dma_Interrupt(int irq, void *hci)
+ 		ret = IRQ_HANDLED;
+ 	}
+ 
++	dev_dbg(musb->controller, "CPPI 4.1 IRQ: Tx %x, Rx %x\n", usb1_tx_intr,
++		usb1_rx_intr);
+ 	if (gmusb[1] && (usb1_rx_intr || usb1_tx_intr)) {
+-		dev_dbg(gmusb[1]->controller, "CPPI 4.1 IRQ: Tx %x, Rx %x\n",
+-			usb1_tx_intr, usb1_rx_intr);
+ 		spin_lock_irqsave(&gmusb[1]->lock, flags);
+ 		cppi41_completion(gmusb[1], usb1_rx_intr,
+ 			usb1_tx_intr);
+@@ -888,23 +759,19 @@ int musb_simulate_babble(struct musb *musb)
+ {
+ 	void __iomem *reg_base = musb->ctrl_base;
+ 	void __iomem *mbase = musb->mregs;
+-	struct device *dev = musb->controller;
+-	struct musb_hdrc_platform_data *plat = dev->platform_data;
+-	struct omap_musb_board_data *data = plat->board_data;
+ 	u8 reg;
+ 
+ 	/* during babble condition musb controller
+ 	 * remove the session
+ 	 */
+-	if (!data->babble_ctrl) {
+-		reg = musb_readb(mbase, MUSB_DEVCTL);
+-		reg &= ~MUSB_DEVCTL_SESSION;
+-		musb_writeb(mbase, MUSB_DEVCTL, reg);
+-		mdelay(100);
+-	}
++	reg = musb_readb(mbase, MUSB_DEVCTL);
++	reg &= ~MUSB_DEVCTL_SESSION;
++	musb_writeb(mbase, MUSB_DEVCTL, reg);
++	mdelay(100);
+ 
+ 	/* generate s/w babble interrupt */
+-	musb_writel(reg_base, USB_IRQ_STATUS_RAW_1, MUSB_INTR_BABBLE);
++	musb_writel(reg_base, USB_IRQ_STATUS_RAW_1,
++		MUSB_INTR_BABBLE);
+ 	return 0;
+ }
+ EXPORT_SYMBOL(musb_simulate_babble);
+@@ -916,13 +783,9 @@ void musb_babble_workaround(struct musb *musb)
+ 	struct musb_hdrc_platform_data *plat = dev->platform_data;
+ 	struct omap_musb_board_data *data = plat->board_data;
+ 
+-	ERR("Babble: devtcl(%x)Restarting musb....\n",
+-			 musb_readb(musb->mregs, MUSB_DEVCTL));
+-
+ 	/* Reset the controller */
+ 	musb_writel(reg_base, USB_CTRL_REG, USB_SOFT_RESET_MASK);
+-	while ((musb_readl(reg_base, USB_CTRL_REG) & 0x1))
+-		cpu_relax();
++	udelay(100);
+ 
+ 	/* Shutdown the on-chip PHY and its PLL. */
+ 	if (data->set_phy_power)
+@@ -937,93 +800,10 @@ void musb_babble_workaround(struct musb *musb)
+ 		data->set_phy_power(musb->id, 1, false);
+ 	mdelay(100);
+ 
+-	/* re-setup the endpoint fifo addresses */
+-	if (musb->ops->reinit)
+-		musb->ops->reinit(plat->config->multipoint, musb);
+-	musb_start(musb);
+-}
+-
+-void musb_babble_hwfix(struct musb *musb)
+-{
+-	int timeout = 10;
+-	u8 temp, session_restart = 0;
+-
+-	/* wait for 320 clock cycles and check whether still babble
+-	 * present on the bus */
+-	udelay(6);
+-
+-	temp = musb_readb(musb->mregs, MUSB_MISC);
+-	dev_dbg(musb->controller, "babble: MUSB MISC value %x\n", temp);
+-
+-	/* check line monitor flag to check whether babble is
+-	 * due to noise
+-	 */
+-	dev_dbg(musb->controller, "STUCK_J is %s\n",
+-		temp & MUSB_MISC_STUCK_J ? "set" : "reset");
+-
+-	if (temp & MUSB_MISC_STUCK_J) {
+-		/* babble is due to noise, then set transmit idle (d7 bit)
+-		 * to resume normal operation
+-		 */
+-		temp = musb_readb(musb->mregs, MUSB_MISC);
+-		temp |= MUSB_MISC_FORCE_TXIDLE;
+-		musb_writeb(musb->mregs, MUSB_MISC, temp);
+-
+-		/* wait till line monitor flag cleared */
+-		dev_dbg(musb->controller, "Set TXIDLE, wait J to clear\n");
+-		do {
+-			temp = musb_readb(musb->mregs, MUSB_MISC);
+-			udelay(1);
+-		} while ((temp & MUSB_MISC_STUCK_J) && timeout--);
+-
+-		/* check whether stuck_at_j bit cleared */
+-		temp = musb_readb(musb->mregs, MUSB_MISC);
+-		if (temp & MUSB_MISC_STUCK_J) {
+-			/* real babble condition is occured
+-			 * restart the controller to start the
+-			 * session again
+-			 */
+-			dev_dbg(musb->controller, "J not cleared, misc (%x)\n",
+-				temp);
+-
+-			session_restart = 1;
+-		} else {
+-			u32 sofcnt;
+-			pr_info("babble: controller shall resume normal\n");
+-			/* check controller resumes normal operation
+-			 * by checking sof occurs for few frames
+-			 */
+-			sofcnt = musb->sof_cnt;
+-			ti81xx_musb_enable_sof(musb);
+-			udelay(280);
+-			if (musb->sof_cnt - sofcnt > 0)
+-				pr_info("babble: controller resumed normal\n");
+-			else {
+-				pr_info("babble: controller cannot resume\n");
+-				session_restart = 1;
+-			}
+-			ti81xx_musb_disable_sof(musb);
+-		}
+-	} else
+-		session_restart = 1;
+-
+-	if (session_restart) {
+-		unsigned long flags;
+-
+-		dev_dbg(musb->controller, "babble: restart controller\n");
+-		temp = musb_readb(musb->mregs, MUSB_DEVCTL);
+-		temp &= ~MUSB_DEVCTL_SESSION;
+-		musb_writeb(musb->mregs, MUSB_DEVCTL, temp);
++	/* save the usbotgss register contents */
++	musb_platform_enable(musb);
+ 
+-		 /* inform stack about disconnect of root hub */
+-		spin_lock_irqsave(&musb->lock, flags);
+-		musb->int_usb = MUSB_INTR_DISCONNECT;
+-		musb_interrupt(musb);
+-		spin_unlock_irqrestore(&musb->lock, flags);
+-
+-		/* restart the session */
+-		musb_babble_workaround(musb);
+-	}
++	musb_start(musb);
+ }
+ 
+ static void evm_deferred_musb_restart(struct work_struct *work)
+@@ -1031,13 +811,8 @@ static void evm_deferred_musb_restart(struct work_struct *work)
+ 	struct musb *musb =
+ 		container_of(work, struct musb, work);
+ 
+-	if (musb->enable_babble_work == BABBLE_WORKAROUND_3) {
+-		/* hw will not end the session  */
+-		musb_babble_hwfix(musb);
+-	} else {
+-		ERR("deferred musb restart musbid(%d)\n", musb->id);
+-		musb_babble_workaround(musb);
+-	}
++	ERR("deferred musb restart musbid(%d)\n", musb->id);
++	musb_babble_workaround(musb);
+ }
+ 
+ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+@@ -1049,7 +824,6 @@ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+ 	u32 pend1 = 0, pend2 = 0;
+ 	u32 epintr, usbintr;
+ 	u8  is_babble = 0;
+-	int err;
+ 
+ 	spin_lock_irqsave(&musb->lock, flags);
+ 
+@@ -1073,28 +847,6 @@ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+ 	musb->int_usb =	(usbintr & USB_INTR_USB_MASK) >> USB_INTR_USB_SHIFT;
+ 
+ 	dev_dbg(musb->controller, "usbintr (%x) epintr(%x)\n", usbintr, epintr);
+-
+-	if (musb->int_usb & MUSB_INTR_SOF) {
+-		musb->sof_cnt++;
+-		musb->int_usb &= ~MUSB_INTR_SOF;
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-		if (musb->tx_isoc_sched_enable)
+-			cppi41_isoc_schedular(musb);
+-#endif
+-		ret = IRQ_HANDLED;
+-	}
+-
+-	if (musb->txfifo_intr_enable && (usbintr & USB_INTR_TXFIFO_MASK)) {
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-		dev_dbg(musb->controller,
+-			"TxFIFOIntr %x\n", usbintr >> USB_INTR_TXFIFO_EMPTY);
+-		cppi41_handle_txfifo_intr(musb,
+-				usbintr >> USB_INTR_TXFIFO_EMPTY);
+-		ret = IRQ_HANDLED;
+-#endif
+-	}
+-	usbintr &= ~USB_INTR_TXFIFO_MASK;
+-
+ 	/*
+ 	 * DRVVBUS IRQs are the only proxy we have (a very poor one!) for
+ 	 * AM3517's missing ID change IRQ.  We need an ID change IRQ to
+@@ -1111,20 +863,21 @@ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+ 			is_babble = 1;
+ 
+ 	if (is_babble) {
+-		if (musb->enable_babble_work != BABBLE_WORKAROUND_3)
+-			musb->int_usb = MUSB_INTR_DISCONNECT;
++		if (musb->enable_babble_work)
++			musb->int_usb |= MUSB_INTR_DISCONNECT;
+ 
+ 		ERR("CAUTION: musb%d: Babble Interrupt Occured\n", musb->id);
++		ERR("Please issue long reset to make usb functional !!\n");
+ 	}
+ 
+-	err = is_host_enabled(musb) && (musb->int_usb &
+-			MUSB_INTR_VBUSERROR);
+-
+-	if (err || (usbintr & (USB_INTR_DRVVBUS << USB_INTR_USB_SHIFT))) {
++	if (usbintr & (USB_INTR_DRVVBUS << USB_INTR_USB_SHIFT)) {
+ 		int drvvbus = musb_readl(reg_base, USB_STAT_REG);
+ 		void __iomem *mregs = musb->mregs;
+ 		u8 devctl = musb_readb(mregs, MUSB_DEVCTL);
++		int err;
+ 
++		err = is_host_enabled(musb) && (musb->int_usb &
++						MUSB_INTR_VBUSERROR);
+ 		if (err) {
+ 			/*
+ 			 * The Mentor core doesn't debounce VBUS as needed
+@@ -1143,21 +896,11 @@ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+ 						jiffies + POLL_SECONDS * HZ);
+ 			WARNING("VBUS error workaround (delay coming)\n");
+ 		} else if (is_host_enabled(musb) && drvvbus) {
+-			if ((devctl & MUSB_DEVCTL_SESSION) &&
+-				!(devctl & MUSB_DEVCTL_BDEVICE) &&
+-				!(devctl & MUSB_DEVCTL_HM)) {
+-				dev_dbg(musb->controller,
+-					"Only micro-A plug is connected\n");
+-			} else {
+-				if (musb->is_active)
+-					del_timer(&musb->otg_workaround);
+-				else
+-					musb->is_active = 1;
+-
+-				MUSB_HST_MODE(musb);
+-				musb->xceiv->default_a = 1;
+-				musb->xceiv->state = OTG_STATE_A_WAIT_VRISE;
+-			}
++			musb->is_active = 1;
++			MUSB_HST_MODE(musb);
++			musb->xceiv->default_a = 1;
++			musb->xceiv->state = OTG_STATE_A_WAIT_VRISE;
++			del_timer(&musb->otg_workaround);
+ 		} else {
+ 			musb->is_active = 0;
+ 			MUSB_DEV_MODE(musb);
+@@ -1209,12 +952,14 @@ static irqreturn_t ti81xx_interrupt(int irq, void *hci)
+ 	}
+ 
+ 	if (is_babble) {
+-		if (musb->enable_babble_work)
+-			schedule_work(&musb->work);
+-		else {
++		if (!musb->enable_babble_work) {
+ 			musb_writeb(musb->mregs, MUSB_DEVCTL,
+ 				musb_readb(musb->mregs, MUSB_DEVCTL) |
+ 				MUSB_DEVCTL_SESSION);
++		} else {
++			ERR("Babble: devtcl(%x)Restarting musb....\n",
++				 musb_readb(musb->mregs, MUSB_DEVCTL));
++			schedule_work(&musb->work);
+ 		}
+ 	}
+ 	return ret;
+@@ -1262,7 +1007,7 @@ int ti81xx_musb_init(struct musb *musb)
+ 	struct device *dev = musb->controller;
+ 	struct musb_hdrc_platform_data *plat = dev->platform_data;
+ 	struct omap_musb_board_data *data = plat->board_data;
+-	u32 rev;
++	u32 rev, status = 0;
+ 	u8 mode;
+ 
+ 	if (musb->id < 2)
+@@ -1274,16 +1019,21 @@ int ti81xx_musb_init(struct musb *musb)
+ 	if (!musb->xceiv)
+ 		return -ENODEV;
+ 
++	status = pm_runtime_get_sync(dev);
++	if (status < 0) {
++		dev_err(dev, "pm_runtime_get_sync FAILED");
++		goto err1;
++	}
++
+ 	/* mentor is at offset of 0x400 in am3517/ti81xx */
+ 	musb->mregs += USB_MENTOR_CORE_OFFSET;
+ 
++
+ 	/* Returns zero if e.g. not clocked */
+ 	rev = musb_readl(reg_base, USB_REVISION_REG);
+ 	if (!rev)
+ 		return -ENODEV;
+ 
+-	pr_info("MUSB%d controller's USBSS revision = %08x\n", musb->id, rev);
+-
+ 	if (is_host_enabled(musb))
+ 		setup_timer(&musb->otg_workaround, otg_timer,
+ 					(unsigned long) musb);
+@@ -1295,7 +1045,7 @@ int ti81xx_musb_init(struct musb *musb)
+ 	while ((musb_readl(reg_base, USB_CTRL_REG) & 0x1))
+ 		cpu_relax();
+ 
+-	/* Start the on-chip PHY and its PLL with PHYWKUP disabled */
++	/* Start the on-chip PHY and its PLL. */
+ 	if (data->set_phy_power)
+ 		data->set_phy_power(musb->id, 1, false);
+ 
+@@ -1321,56 +1071,16 @@ int ti81xx_musb_init(struct musb *musb)
+ 	/* set musb controller to host mode */
+ 	musb_platform_set_mode(musb, mode);
+ 
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	/* TxFifo empty interrupt logic is supported
+-	 * only for isochronous tranfers only
+-	 */
+-	musb->txfifo_intr_enable = data->txfifo_intr_enable;
+-	musb->tx_isoc_sched_enable = data->tx_isoc_sched_enable;
+-
+-	if (musb->tx_isoc_sched_enable) {
+-		if (musb->txfifo_intr_enable) {
+-			musb->txfifo_intr_enable = 0;
+-			dev_dbg(musb->controller, "disable txfifo intr"
+-				" logic disabled\n");
+-		}
+-		dev_dbg(musb->controller, "tx-isoc-schedular logic enabled\n");
+-	}
+-
+-	if (musb->txfifo_intr_enable)
+-		printk(KERN_DEBUG "TxFifo Empty intr enabled\n");
+-	else
+-		printk(KERN_DEBUG "TxFifo Empty intr disabled\n");
+-
+-	/* enable rxdma GRNDIS mode, as Extra IN token
+-	 * issue fixed in PG2.0 RTL
+-	 */
+-	if (data->grndis_for_host_rx)
+-		usb_cppi41_info[musb->id].rx_dma_mode = USB_GENERIC_RNDIS_MODE;
+-#endif
+ 	/* enable babble workaround */
+ 	INIT_WORK(&musb->work, evm_deferred_musb_restart);
+ 	musb->enable_babble_work = 0;
+ 
+-	musb->enable_babble_work = BABBLE_WORKAROUND;
+ 	musb_writel(reg_base, USB_IRQ_EOI, 0);
+ 
+-	if (data->babble_ctrl) {
+-		u8 temp;
+-		/* enable s/w controlled session bit during
+-		 * babble condition
+-		 */
+-		temp = musb_readb(musb->mregs, MUSB_MISC);
+-		temp |= MUSB_MISC_SW_SESSION_CTRL;
+-		musb_writeb(musb->mregs, MUSB_MISC, temp);
+-
+-		musb->enable_babble_work = BABBLE_WORKAROUND_3;
+-		pr_info("musb%d: Enabled SW babble control\n", musb->id);
+-		dev_dbg(musb->controller, "musb.misc regval %x\n",
+-			musb_readb(musb->mregs, MUSB_MISC));
+-	}
+-
+ 	return 0;
++err1:
++	pm_runtime_disable(dev);
++	return status;
+ }
+ 
+ /* TI81xx supports only 32bit read operation */
+@@ -1440,13 +1150,6 @@ static struct musb_platform_ops ti81xx_ops = {
+ 	.dma_controller_create	= cppi41_dma_controller_create,
+ 	.dma_controller_destroy	= cppi41_dma_controller_destroy,
+ 	.simulate_babble_intr	= musb_simulate_babble,
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	.txfifoempty_intr_enable = txfifoempty_intr_enable,
+-	.txfifoempty_intr_disable = txfifoempty_intr_disable,
+-#endif
+-	.reinit = musb_reinit,
+-	.enable_sof = ti81xx_musb_enable_sof,
+-	.disable_sof = ti81xx_musb_disable_sof
+ };
+ 
+ static void __devexit ti81xx_delete_musb_pdev(struct ti81xx_glue *glue, u8 id)
+@@ -1557,12 +1260,28 @@ static int __init ti81xx_probe(struct platform_device *pdev)
+ 		goto err0;
+ 	}
+ 
++	/* interface clock needs to be enabled for usbss register programming */
++	glue->ick = clk_get(&pdev->dev, "usbotg_ick");
++	if (IS_ERR(glue->ick)) {
++		dev_err(&pdev->dev, "unable to get usbss interface clock\n");
++		ret = PTR_ERR(glue->ick);
++		goto err1;
++	}
++
++	/* functional clock needs to be enabled for usbss register programming */
++	glue->fck = clk_get(&pdev->dev, "usbotg_fck");
++	if (IS_ERR(glue->fck)) {
++		dev_err(&pdev->dev, "unable to get usbss functional clock\n");
++		ret = PTR_ERR(glue->fck);
++		goto err2;
++	}
++
+ 	/* get memory resource */
+ 	glue->mem_pa = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+ 	if (!glue->mem_pa) {
+ 		dev_err(&pdev->dev, "failed to get usbss mem resourse\n");
+ 		ret = -ENODEV;
+-		goto err1;
++		goto err3;
+ 	}
+ 
+ 	/* get memory resource */
+@@ -1570,38 +1289,43 @@ static int __init ti81xx_probe(struct platform_device *pdev)
+ 	if (!res) {
+ 		dev_err(&pdev->dev, "failed to get usbss irq resourse\n");
+ 		ret = -ENODEV;
+-		goto err1;
++		goto err3;
+ 	}
+ 	glue->irq = res->start;
+ 
++	/* enable interface clock */
++	ret = clk_enable(glue->ick);
++	if (ret) {
++		dev_err(&pdev->dev, "failed to enable usbss interface clock\n");
++		goto err3;
++	}
++
++	/* enable functional clock */
++	ret = clk_enable(glue->fck);
++	if (ret) {
++		dev_err(&pdev->dev, "failed to enable usbss functional clock\n");
++		goto err4;
++	}
++
+ 	/* iomap for usbss mem space */
+ 	glue->mem_va =
+ 		ioremap(glue->mem_pa->start, resource_size(glue->mem_pa));
+ 	if (!glue->mem_va) {
+ 		dev_err(&pdev->dev, "usbss ioremap failed\n");
+ 		ret = -ENOMEM;
+-		goto err1;
++		goto err5;
+ 	}
+ 	usbss_virt_base = glue->mem_va;
+ 
+-	glue->first = 1;
+ 	glue->dev = &pdev->dev;
+ 	platform_set_drvdata(pdev, glue);
+ 
+-	/* enable clocks */
+-	pm_runtime_enable(&pdev->dev);
+-	ret = pm_runtime_get_sync(&pdev->dev);
+-	if (ret < 0) {
+-		dev_err(dev, "pm_runtime_get_sync FAILED");
+-		goto err2;
+-	}
+-
+ 	/* usb subsystem init */
+ 	usbotg_ss_init();
+ 
+ 	/* clear any USBSS interrupts */
+-	writel(0, glue->mem_va + USBSS_IRQ_EOI);
+-	writel(readl(glue->mem_va + USBSS_IRQ_STATUS),
++	__raw_writel(0, glue->mem_va + USBSS_IRQ_EOI);
++	__raw_writel(__raw_readl(glue->mem_va + USBSS_IRQ_STATUS),
+ 					glue->mem_va + USBSS_IRQ_STATUS);
+ 
+ 	/* create the child platform device for mulitple instances of musb */
+@@ -1612,16 +1336,21 @@ static int __init ti81xx_probe(struct platform_device *pdev)
+ #endif
+ 		ret = ti81xx_create_musb_pdev(glue, i);
+ 		if (ret != 0)
+-			goto err3;
++			goto err6;
+ 	}
+ 
+ 	return 0;
+ 
++err6:
++	iounmap(glue->mem_va);
++err5:
++	clk_disable(glue->fck);
++err4:
++	clk_disable(glue->ick);
+ err3:
+-	pm_runtime_put_sync(&pdev->dev);
++	clk_put(glue->fck);
+ err2:
+-	pm_runtime_disable(&pdev->dev);
+-	iounmap(glue->mem_va);
++	clk_put(glue->ick);
+ err1:
+ 	kfree(glue);
+ err0:
+@@ -1636,9 +1365,6 @@ static int __exit ti81xx_remove(struct platform_device *pdev)
+ 	struct omap_musb_board_data *data = plat->board_data;
+ 	int i;
+ 
+-	pm_runtime_put_sync(&pdev->dev);
+-	pm_runtime_disable(&pdev->dev);
+-
+ 	/* delete the child platform device for mulitple instances of musb */
+ 	for (i = 0; i <= data->instances; ++i)
+ 		ti81xx_delete_musb_pdev(glue, i);
+@@ -1650,221 +1376,44 @@ static int __exit ti81xx_remove(struct platform_device *pdev)
+ 	iounmap(glue->mem_va);
+ 	usbotg_ss_uninit();
+ 
++	/* disable common usbss functional clock */
++	clk_disable(glue->fck);
++	clk_put(glue->fck);
++	/* disable common usbss interface clock */
++	clk_disable(glue->ick);
++	clk_put(glue->ick);
+ 	kfree(glue);
+ 
+ 	return 0;
+ }
+ 
+ #ifdef CONFIG_PM
+-static void ti81xx_save_context(struct ti81xx_glue *glue)
+-{
+-	struct ti81xx_usbss_regs *usbss = &glue->usbss_regs;
+-	u8 i, j;
+-
+-	/* save USBSS register */
+-	usbss->irq_en_set = usbss_read(USBSS_IRQ_ENABLE_SET);
+-
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	for (i = 0 ; i < 4 ; i++) {
+-		usbss->irq_dma_th_tx0[i] =
+-			usbss_read(USBSS_IRQ_DMA_THRESHOLD_TX0 + (0x4 * i));
+-		usbss->irq_dma_th_rx0[i] =
+-			usbss_read(USBSS_IRQ_DMA_THRESHOLD_RX0 + (0x4 * i));
+-		usbss->irq_dma_th_tx1[i] =
+-			usbss_read(USBSS_IRQ_DMA_THRESHOLD_TX1 + (0x4 * i));
+-		usbss->irq_dma_th_rx1[i] =
+-			usbss_read(USBSS_IRQ_DMA_THRESHOLD_RX1 + (0x4 * i));
+-
+-		usbss->irq_frame_th_tx0[i] =
+-			usbss_read(USBSS_IRQ_FRAME_THRESHOLD_TX0 + (0x4 * i));
+-		usbss->irq_frame_th_rx0[i] =
+-			usbss_read(USBSS_IRQ_FRAME_THRESHOLD_RX0 + (0x4 * i));
+-		usbss->irq_frame_th_tx1[i] =
+-			usbss_read(USBSS_IRQ_FRAME_THRESHOLD_TX1 + (0x4 * i));
+-		usbss->irq_frame_th_rx1[i] =
+-			usbss_read(USBSS_IRQ_FRAME_THRESHOLD_RX1 + (0x4 * i));
+-	}
+-	for (i = 0 ; i < 2 ; i++) {
+-		usbss->irq_dma_en[i] =
+-			usbss_read(USBSS_IRQ_DMA_ENABLE_0 + (0x4 * i));
+-		usbss->irq_frame_en[i] =
+-			usbss_read(USBSS_IRQ_FRAME_ENABLE_0 + (0x4 * i));
+-	}
+-#endif
+-	/* save usbX register */
+-	for (i = 0 ; i < 2 ; i++) {
+-		struct ti81xx_usb_regs *usb = &glue->usb_regs[i];
+-		struct musb *musb = platform_get_drvdata(glue->musb[i]);
+-		void __iomem *cbase = musb->ctrl_base;
+-
+-		/* disable the timers */
+-		if (timer_pending(&musb->otg_workaround) &&
+-					is_host_enabled(musb)) {
+-			del_timer_sync(&musb->otg_workaround);
+-			musb->en_otgw_timer = 1;
+-		}
+-
+-		if (timer_pending(&musb->otg_timer) &&
+-					is_otg_enabled(musb)) {
+-			del_timer_sync(&musb->otg_timer);
+-			musb->en_otg_timer = 1;
+-		}
+-
+-		musb_save_context(musb);
+-		usb->control = musb_readl(cbase, USB_CTRL_REG);
+-
+-		for (j = 0 ; j < 2 ; j++)
+-			usb->irq_en_set[j] = musb_readl(cbase,
+-					USB_IRQ_ENABLE_SET_0 + (0x4 * j));
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-		usb->tx_mode = musb_readl(cbase, USB_TX_MODE_REG);
+-		usb->rx_mode = musb_readl(cbase, USB_RX_MODE_REG);
+-
+-		for (j = 0 ; j < 15 ; j++)
+-			usb->grndis_size[j] = musb_readl(cbase,
+-					USB_GENERIC_RNDIS_EP_SIZE_REG(j + 1));
+-
+-		usb->auto_req = musb_readl(cbase, TI81XX_USB_AUTOREQ_REG);
+-		usb->teardn = musb_readl(cbase, TI81XX_USB_TEARDOWN_REG);
+-		usb->th_xdma_idle = musb_readl(cbase, USB_TH_XDMA_IDLE_REG);
+-#endif
+-		usb->srp_fix = musb_readl(cbase, USB_SRP_FIX_TIME_REG);
+-		usb->phy_utmi = musb_readl(cbase, USB_PHY_UTMI_REG);
+-		usb->mgc_utmi_loopback = musb_readl(cbase, USB_PHY_UTMI_LB_REG);
+-		usb->mode = musb_readl(cbase, USB_MODE_REG);
+-	}
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	/* save CPPI4.1 DMA register for dma block 0 */
+-	cppi41_save_context(0);
+-#endif
+-}
+-static void ti81xx_restore_context(struct ti81xx_glue *glue)
+-{
+-	struct ti81xx_usbss_regs *usbss = &glue->usbss_regs;
+-	u8 i, j;
+-
+-	/* restore USBSS register */
+-	usbss_write(USBSS_IRQ_ENABLE_SET, usbss->irq_en_set);
+-
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	for (i = 0 ; i < 4 ; i++) {
+-		usbss_write(USBSS_IRQ_DMA_THRESHOLD_TX0 + (0x4 * i),
+-				usbss->irq_dma_th_tx0[i]);
+-		usbss_write(USBSS_IRQ_DMA_THRESHOLD_RX0 + (0x4 * i),
+-				usbss->irq_dma_th_rx0[i]);
+-		usbss_write(USBSS_IRQ_DMA_THRESHOLD_TX1 + (0x4 * i),
+-				usbss->irq_dma_th_tx1[i]);
+-		usbss_write(USBSS_IRQ_DMA_THRESHOLD_RX1 + (0x4 * i),
+-				usbss->irq_dma_th_rx1[i]);
+-
+-		usbss_write(USBSS_IRQ_FRAME_THRESHOLD_TX0 + (0x4 * i),
+-				usbss->irq_frame_th_tx0[i]);
+-		usbss_write(USBSS_IRQ_FRAME_THRESHOLD_RX0 + (0x4 * i),
+-				usbss->irq_frame_th_rx0[i]);
+-		usbss_write(USBSS_IRQ_FRAME_THRESHOLD_TX1 + (0x4 * i),
+-				usbss->irq_frame_th_tx1[i]);
+-		usbss_write(USBSS_IRQ_FRAME_THRESHOLD_RX1 + (0x4 * i),
+-				usbss->irq_frame_th_rx1[i]);
+-	}
+-	for (i = 0 ; i < 2 ; i++) {
+-		usbss_write(USBSS_IRQ_DMA_ENABLE_0 + (0x4 * i),
+-				usbss->irq_dma_en[i]);
+-		usbss_write(USBSS_IRQ_FRAME_ENABLE_0 + (0x4 * i),
+-				usbss->irq_frame_en[i]);
+-	}
+-#endif
+-	/* restore usbX register */
+-	for (i = 0 ; i < 2 ; i++) {
+-		struct ti81xx_usb_regs *usb = &glue->usb_regs[i];
+-		struct musb *musb = platform_get_drvdata(glue->musb[i]);
+-		void __iomem *cbase = musb->ctrl_base;
+-
+-		musb_restore_context(musb);
+-		musb_writel(cbase, USB_CTRL_REG, usb->control);
+-
+-		for (j = 0 ; j < 2 ; j++)
+-			musb_writel(cbase, USB_IRQ_ENABLE_SET_0 + (0x4 * j),
+-					usb->irq_en_set[j]);
+-
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-		musb_writel(cbase, USB_TX_MODE_REG, usb->tx_mode);
+-		musb_writel(cbase, USB_RX_MODE_REG, usb->rx_mode);
+-
+-		for (j = 0 ; j < 15 ; j++)
+-			musb_writel(cbase, USB_GENERIC_RNDIS_EP_SIZE_REG(j + 1),
+-					usb->grndis_size[j]);
+-
+-		musb_writel(cbase, TI81XX_USB_AUTOREQ_REG, usb->auto_req);
+-		musb_writel(cbase, TI81XX_USB_TEARDOWN_REG, usb->teardn);
+-		musb_writel(cbase, USB_TH_XDMA_IDLE_REG, usb->th_xdma_idle);
+-#endif
+-		musb_writel(cbase, USB_SRP_FIX_TIME_REG, usb->srp_fix);
+-		musb_writel(cbase, USB_PHY_UTMI_REG, usb->phy_utmi);
+-		musb_writel(cbase, USB_PHY_UTMI_LB_REG, usb->mgc_utmi_loopback);
+-		musb_writel(cbase, USB_MODE_REG, usb->mode);
+-
+-		/* reenable the timers */
+-		if (musb->en_otgw_timer && is_host_enabled(musb)) {
+-			mod_timer(&musb->otg_workaround,
+-					jiffies + POLL_SECONDS * HZ);
+-			musb->en_otgw_timer = 0;
+-		}
+-		if (musb->en_otg_timer && is_otg_enabled(musb)) {
+-			mod_timer(&musb->otg_timer,
+-					jiffies + POLL_SECONDS * HZ);
+-			musb->en_otg_timer = 0;
+-		}
+-	}
+-#ifdef CONFIG_USB_TI_CPPI41_DMA
+-	/* restore CPPI4.1 DMA register for dma block 0 */
+-	cppi41_restore_context(0, dma_sched_table);
+-#endif
+-	/* controller needs delay for successful resume */
+-	msleep(200);
+-}
+-static int ti81xx_runtime_suspend(struct device *dev)
++static int ti81xx_suspend(struct device *dev)
+ {
+ 	struct ti81xx_glue *glue = dev_get_drvdata(dev);
+ 	struct musb_hdrc_platform_data *plat = dev->platform_data;
+ 	struct omap_musb_board_data *data = plat->board_data;
+-	struct platform_device *pdev;
+ 	int i;
+ 
+-	/* save wrappers and cppi4.1 dma register */
+-	ti81xx_save_context(glue);
+-
+-	/* Shutdown the on-chip PHY and its PLL.
+-	 * Enable USB PHYWKUP only if enabled through sysfs.
+-	 * By default USB PHYWKUP is  disabled
+-	 */
+-	if (data->set_phy_power) {
+-		for (i = 0; i <= data->instances; ++i) {
+-			pdev = glue->musb[i];
+-			if (device_may_wakeup(&pdev->dev))
+-				data->set_phy_power(i, 0, true);
+-			else
+-				data->set_phy_power(i, 0, false);
+-		}
++	/* Shutdown the on-chip PHY and its PLL. */
++	for (i = 0; i <= data->instances; ++i) {
++		if (data->set_phy_power)
++			data->set_phy_power(i, 0, false);
+ 	}
+ 
++	/* disable the common usbss functional clock */
++	clk_disable(glue->fck);
++	/* disable the common usbss interface clock */
++	clk_disable(glue->ick);
+ 	return 0;
+ }
+ 
+-static int ti81xx_runtime_resume(struct device *dev)
++static int ti81xx_resume(struct device *dev)
+ {
+ 	struct ti81xx_glue *glue = dev_get_drvdata(dev);
+ 	struct musb_hdrc_platform_data *plat = dev->platform_data;
+ 	struct omap_musb_board_data *data = plat->board_data;
+-	int i;
+-
+-	/*
+-	 * ignore first call of resume as all registers are not yet
+-	 * initialized
+-	 */
+-	if (glue->first) {
+-		glue->first = 0;
+-		return 0;
+-	}
++	int ret, i;
+ 
+ 	/* Start the on-chip PHY and its PLL. */
+ 	for (i = 0; i <= data->instances; ++i) {
+@@ -1872,15 +1421,24 @@ static int ti81xx_runtime_resume(struct device *dev)
+ 			data->set_phy_power(i, 1, false);
+ 	}
+ 
+-	/* restore wrappers and cppi4.1 dma register */
+-	ti81xx_restore_context(glue);
+-
++	/* enable the common usbss interface clock */
++	ret = clk_enable(glue->ick);
++	if (ret) {
++		dev_err(dev, "failed to enable iclock\n");
++		return ret;
++	}
++	/* enable the common usbss functional clock */
++	ret = clk_enable(glue->fck);
++	if (ret) {
++		dev_err(dev, "failed to enable fclock\n");
++		return ret;
++	}
+ 	return 0;
+ }
+ 
+ static const struct dev_pm_ops ti81xx_pm_ops = {
+-	.runtime_suspend = ti81xx_runtime_suspend,
+-	.runtime_resume	= ti81xx_runtime_resume,
++	.suspend	= ti81xx_suspend,
++	.resume		= ti81xx_resume,
+ };
+ 
+ #define DEV_PM_OPS	(&ti81xx_pm_ops)
+@@ -1922,3 +1480,19 @@ static void __exit ti81xx_glue_exit(void)
+ 	platform_driver_unregister(&ti81xx_musb_driver);
+ }
+ module_exit(ti81xx_glue_exit);
++
++#if 0
++#ifdef CONFIG_PM
++void musb_platform_save_context(struct musb *musb,
++		 struct musb_context_registers *musb_context)
++{
++	/* Save CPPI41 DMA related registers */
++}
++
++void musb_platform_restore_context(struct musb *musb,
++		 struct musb_context_registers *musb_context)
++{
++	/* Restore CPPI41 DMA related registers */
++}
++#endif
++#endif
+diff --git a/drivers/usb/musb/ti81xx.h b/drivers/usb/musb/ti81xx.h
+index d173b55..fe1caf9 100644
+--- a/drivers/usb/musb/ti81xx.h
++++ b/drivers/usb/musb/ti81xx.h
+@@ -83,7 +83,6 @@
+ 
+ #define USB_GRNDIS_EPSIZE_OFFS	0X0080
+ #define USB_SRP_FIX_TIME_REG    0x00d4
+-#define USB_TH_XDMA_IDLE_REG    0x00dc
+ #define USB_PHY_UTMI_REG	0x00e0
+ #define USB_PHY_UTMI_LB_REG	0x00e4
+ #define USB_MODE_REG		0x00e8
+@@ -125,9 +124,6 @@
+ /* USB interrupt register bits */
+ #define USB_INTR_USB_SHIFT      0
+ #define USB_INTR_USB_MASK       (0x1ff << USB_INTR_USB_SHIFT) /* 8 Mentor */
+-#define USB_INTR_TXFIFO_MASK     (0xffff << 16)
+-#define USB_INTR_TXFIFO_EMPTY	17
+-
+ 				/* interrupts and DRVVBUS interrupt */
+ #define USB_INTR_DRVVBUS        0x100
+ #define USB_INTR_RX_SHIFT       16
