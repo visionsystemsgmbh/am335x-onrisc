@@ -4,22 +4,20 @@ From: Yegor Yefremov <yegorslists@googlemail.com>
 
 
 ---
-
  arch/arm/mach-omap2/board-am335xevm.c |   68 +
  drivers/i2c/i2c-core.c                |    2 
- drivers/video/da8xx-fb.c              |   72 ++
+ drivers/video/da8xx-fb.c              |   76 ++
  drivers/video/display/Kconfig         |    4 
  drivers/video/display/Makefile        |    1 
  drivers/video/display/siihdmi.c       | 1514 +++++++++++++++++++++++++++++++++
  drivers/video/display/siihdmi.h       |  421 +++++++++
  include/linux/cea861.h                |  443 ++++++++++
  include/linux/edid.h                  |  372 ++++++++
- 9 files changed, 2893 insertions(+), 4 deletions(-)
+ 9 files changed, 2895 insertions(+), 6 deletions(-)
  create mode 100644 drivers/video/display/siihdmi.c
  create mode 100644 drivers/video/display/siihdmi.h
  create mode 100644 include/linux/cea861.h
  create mode 100644 include/linux/edid.h
-
 
 diff --git a/arch/arm/mach-omap2/board-am335xevm.c b/arch/arm/mach-omap2/board-am335xevm.c
 index fbe4e38..8efac9d 100644
@@ -149,7 +147,7 @@ index 1e56061..caf4aef 100644
  	if (adapter->algo->smbus_xfer) {
  		i2c_lock_adapter(adapter);
 diff --git a/drivers/video/da8xx-fb.c b/drivers/video/da8xx-fb.c
-index a50114c..c90ada2 100644
+index a50114c..64c0d60 100644
 --- a/drivers/video/da8xx-fb.c
 +++ b/drivers/video/da8xx-fb.c
 @@ -142,6 +142,23 @@ static struct resource *lcdc_regs;
@@ -205,6 +203,17 @@ index a50114c..c90ada2 100644
  	},
  	/* ThreeFive S9700RTWV35TR */
  	[2] = {
+@@ -278,8 +308,8 @@ static struct da8xx_panel known_lcd_panels[] = {
+ 	/* Newhaven Display */
+ 	[3] = {
+ 		.name = "NHD-4.3-ATXI#-T-1",
+-		.width = 480,
+-		.height = 272,
++		.width = 1024,
++		.height = 768,
+ 		.hfp = 8,
+ 		.hbp = 43,
+ 		.hsw = 4,
 @@ -1521,8 +1551,18 @@ static int __devinit fb_probe(struct platform_device *device)
  
  	/* initialize var_screeninfo */
