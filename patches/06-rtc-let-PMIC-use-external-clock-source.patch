@@ -1,0 +1,26 @@
+From 3d94abebfb098752d63b65b54c7f1529be7c7aa7 Mon Sep 17 00:00:00 2001
+From: Vision Systems GmbH <contact@visionsystems.de>
+Date: Tue, 10 Jun 2014 12:11:40 +0200
+Subject: [PATCH] rtc: let PMIC use external clock source
+
+---
+ drivers/rtc/rtc-tps65910.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/rtc/rtc-tps65910.c b/drivers/rtc/rtc-tps65910.c
+index e5fef14..4c923ba 100644
+--- a/drivers/rtc/rtc-tps65910.c
++++ b/drivers/rtc/rtc-tps65910.c
+@@ -254,6 +254,9 @@ static int tps65910_rtc_probe(struct platform_device *pdev)
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = regmap_update_bits(tps65910->regmap, TPS65910_DEVCTRL,
++		DEVCTRL_CK32K_CTRL_MASK, 0);
++
+ 	rtc_reg = TPS65910_RTC_CTRL_STOP_RTC;
+ 	ret = regmap_write(tps65910->regmap, TPS65910_RTC_CTRL, rtc_reg);
+ 	if (ret < 0)
+-- 
+1.7.7
+
