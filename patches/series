@@ -4,3 +4,4 @@
 03-rtc-support.patch
 04-audio-support.patch
 05-usb-mass-storage-fix.patch
+06-rtc-let-PMIC-use-external-clock-source.patch
