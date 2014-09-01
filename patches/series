@@ -5,3 +5,5 @@
 04-audio-support.patch
 05-usb-mass-storage-fix.patch
 06-rtc-let-PMIC-use-external-clock-source.patch
+07-ignore-write-protect-flag.patch
+08-silence-LCD-timeout-warning.patch

@@ -1,0 +1,25 @@
+From 1eebeed6158ee8e42b242d4ce11a771eee4e1fb5 Mon Sep 17 00:00:00 2001
+From: Vision Systems GmbH <contact@visionsystems.de>
+Date: Thu, 28 Aug 2014 11:51:16 +0200
+Subject: [PATCH 2/2] Silence LCD timeout warning
+
+---
+ drivers/video/da8xx-fb.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/da8xx-fb.c b/drivers/video/da8xx-fb.c
+index 64c0d60..666a0a1 100644
+--- a/drivers/video/da8xx-fb.c
++++ b/drivers/video/da8xx-fb.c
+@@ -380,7 +380,7 @@ static inline void lcd_disable_raster(bool wait_for_frame_done)
+ 		lcdc_write(stat, LCD_MASKED_STAT_REG);
+ 
+ 	if ((loop_cnt != 0) && (i >= loop_cnt)) {
+-		printk(KERN_ERR "LCD Controller timed out\n");
++		//printk(KERN_DEBUG "LCD Controller timed out\n");
+ 		return;
+ 	}
+ }
+-- 
+1.7.7
+
