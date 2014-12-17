@@ -23,4 +23,6 @@ Install it to `/opt/` and execute following commands:
 1. `export ARCH=arm`
 2. `export PATH=/opt/gcc-linaro-arm-linux-gnueabihf-4.8-2013.10_linux/bin/:$PATH`
 3. `export CROSS_COMPILE=arm-linux-gnueabihf-`
-4. `make uImage tar-pkg`
+4. `make menuconfig` (this is an optional step. Execute is, if you need to change your kernel configuration)
+5. `make uImage` (`uImage` is created in `arch/arm/boot`)
+6. `make tar-pkg` (this step creates linux-3.2.0+.tar in kernel root directory. This archive provides kernel modules, that you'll need to install on your target system via `tar xf linux-3.2.0+.tar -C /`)
